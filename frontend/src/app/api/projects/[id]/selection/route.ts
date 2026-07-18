@@ -86,16 +86,24 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  try {
-    const text = await fs.readFile(selectionPath(id), "utf8");
-    const normalized = normalize(JSON.parse(text) as Record<string, unknown>, id);
-    if (!normalized) {
-      return NextResponse.json({ error: "Invalid selection.json" }, { status: 500 });
+  const candidates = [
+    selectionPath(id),
+    // Training-data copy — used when runs/<id>/ was never written.
+    path.join(dataProjectDir(id), "selection.json"),
+  ];
+  for (const file of candidates) {
+    try {
+      const text = await fs.readFile(file, "utf8");
+      const normalized = normalize(JSON.parse(text) as Record<string, unknown>, id);
+      if (!normalized) {
+        return NextResponse.json({ error: "Invalid selection.json" }, { status: 500 });
+      }
+      return NextResponse.json(normalized);
+    } catch {
+      // try next candidate
     }
-    return NextResponse.json(normalized);
-  } catch {
-    return NextResponse.json({ selection: null });
   }
+  return NextResponse.json({ selection: null });
 }
 
 export async function PUT(

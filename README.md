@@ -26,26 +26,26 @@ The screen track is also flattened to top-level `roi` / `start` / `end` so YOLO
 scripts keep working:
 
 ```bash
-uv run python scripts/train_yolo.py --selection data/<video-id>/selection.json
-uv run python scripts/predict_yolo_video.py --selection runs/<video-id>/selection.json
+.venv/bin/python scripts/train_yolo.py --selection data/<video-id>/selection.json
+.venv/bin/python scripts/predict_yolo_video.py --selection runs/<video-id>/selection.json
 ```
 
 ## Processing run directory contract
 
-Each **Processing run** lives under `runs/<id>/` and uses these filenames:
+Each **Processing run** lives under `runs/<id>/`:
 
-| File | Role |
+| Path | Role |
 |------|------|
 | `selection.json` | Project selection: Crop ROI, Keyboard ROI, time range, fps, video path |
-| `keystrokes.json` | Keystroke Raw events from the keyboard detector |
-| `cursor_events.jsonl` | Cursor observation Raw events (one JSON object per line) |
-| `speech_full.json` | Full-video ASR (feeds the Workflow summary) |
-| `speech_trimmed.json` | Trimmed-range ASR (feeds Action–Intent pairs) |
-| `action_intent_pairs.json` | Ordered Action–Intent pairs (intermediate) |
+| `keystrokes/keystrokes.json` | Keystroke Raw events from the keyboard detector |
+| `keystrokes/keystroke_job.json` | Async keystroke job progress (UI polling) |
+| `cursor/cursor_events.jsonl` | Cursor observation Raw events (one JSON object per line) |
+| `intent/speech_full.json` | Full-video ASR (feeds the Workflow summary) |
+| `intent/speech_trimmed.json` | Trimmed-range ASR (feeds Action–Intent pairs) |
+| `intent/action_intent_pairs.json` | Ordered Action–Intent pairs (intermediate) |
+| `intent/intent_job.json` | Async intent job progress (UI polling) |
+| `summary/summary.json` | Optional task summary; prefer the `summary` field on the Workflow sample |
 | `workflow_sample.json` | Published **Workflow sample** |
-
-Optional: `summary.json` with `{"summary": "..."}` if written separately; prefer the
-`summary` field on the Workflow sample.
 
 ### Workflow sample shape
 
@@ -66,7 +66,7 @@ Optional: `summary.json` with `{"summary": "..."}` if written separately; prefer
 Write an empty stub sample from an existing selection:
 
 ```bash
-uv run python -m cursor stub-workflow runs/<id>
+.venv/bin/python -m cursor stub-workflow runs/<id>
 ```
 
 Or from Python:
@@ -84,8 +84,7 @@ ASR and Action–Intent / summary both use the **OpenAI API**
 
 ```bash
 cp .env.example .env   # set OPENAI_API_KEY
-uv sync
-uv run python -m cursor extract-intent runs/<id>
+.venv/bin/python -m cursor extract-intent runs/<id>
 ```
 
 ## Train a YOLO cursor detector
@@ -98,7 +97,7 @@ MP4 stays local; `selection.json` records its path (for example
 are not versioned—rebuild them from selection + annotations when retraining.
 
 ```bash
-uv run python scripts/train_yolo.py --selection data/<video-id>/selection.json
+.venv/bin/python scripts/train_yolo.py --selection data/<video-id>/selection.json
 ```
 
 Device order is **CUDA → MPS → CPU** (`--device` to override). Appearance-class
@@ -106,8 +105,8 @@ stratified train/val counts print on prepare/train. Side-by-side `yolo11s` /
 `yolo11m` commands (print only unless `--run`):
 
 ```bash
-uv run python scripts/train_yolo_compare.py
-# uv run python scripts/train_yolo_compare.py --run
+.venv/bin/python scripts/train_yolo_compare.py
+# .venv/bin/python scripts/train_yolo_compare.py --run
 ```
 
 Do not auto-overwrite `artifacts/models/cursor/weights/best.pt` — promote the
@@ -116,13 +115,13 @@ winner manually after comparing val metrics.
 Weights land in `artifacts/models/cursor/weights/best.pt`. Audit annotations first:
 
 ```bash
-uv run python scripts/audit_yolo_data.py --selection data/<video-id>/selection.json
+.venv/bin/python scripts/audit_yolo_data.py --selection data/<video-id>/selection.json
 ```
 
 Render a detection preview video:
 
 ```bash
-uv run python scripts/predict_yolo_video.py --selection runs/<video-id>/selection.json
+.venv/bin/python scripts/predict_yolo_video.py --selection runs/<video-id>/selection.json
 ```
 
 Preview MP4 + detections JSONL go to `artifacts/predictions/<video-id>/`.
@@ -145,8 +144,8 @@ Preview MP4 + detections JSONL go to `artifacts/predictions/<video-id>/`.
 CLI:
 
 ```bash
-uv run python -m cursor --help
-uv run python -m cursor extract-intent --help
-uv run python -m cursor extract-keystrokes --help
-uv run python -m cursor extract-cursor --help
+.venv/bin/python -m cursor --help
+.venv/bin/python -m cursor extract-intent --help
+.venv/bin/python -m cursor extract-keystrokes --help
+.venv/bin/python -m cursor extract-cursor --help
 ```

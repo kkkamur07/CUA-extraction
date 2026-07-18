@@ -50,8 +50,35 @@ export function VideoWorkbench({ id, videoName }: Props) {
       const res = await fetch(`/api/projects/${id}/selection`);
       const json = await res.json();
       if (cancelled) return;
-      const sel = (json.selection ?? json) as ProjectSelection | null;
-      if (sel?.screen) selection.applyLoadedSelection(sel);
+      // API returns either a selection object, or `{ selection: null }` when missing.
+      const sel = (
+        json && typeof json === "object" && "selection" in json
+          ? json.selection
+          : json
+      ) as ProjectSelection | null;
+      // Always probe duration/size via ffprobe — browser <video> seeking is unreliable
+      // for large files, and saved selections don't store duration.
+      const metaRes = await fetch(
+        `/api/videos/${encodeURIComponent(videoName)}/meta`,
+      );
+      const meta = await metaRes.json();
+      if (cancelled) return;
+      if (!metaRes.ok) {
+        throw new Error(meta.error || "Failed to load video metadata");
+      }
+      if (sel?.screen) {
+        selection.applyLoadedSelection(sel);
+      }
+      selection.onMeta({
+        duration: Number(meta.duration) || 0,
+        width: Number(meta.width) || 1920,
+        height: Number(meta.height) || 1080,
+      });
+      if (sel?.fps && sel.fps > 0) {
+        selection.setFps(sel.fps);
+      } else if (typeof meta.fps === "number" && meta.fps > 0) {
+        selection.setFps(meta.fps);
+      }
       await Promise.all([
         cursor.loadAnnotationCounts(),
         kb.loadKeystrokes(),
@@ -63,7 +90,7 @@ export function VideoWorkbench({ id, videoName }: Props) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once per project
-  }, [id]);
+  }, [id, videoName]);
 
   const step = useCallback(
     (direction: -1 | 1) => {
@@ -117,7 +144,22 @@ export function VideoWorkbench({ id, videoName }: Props) {
           <button
             key={item.id}
             type="button"
-            onClick={() => setTab(item.id)}
+            onClick={() => {
+              setTab(item.id);
+              if (item.id === "keyboard" && selection.keyboard) {
+                selection.setCurrentTime(
+                  selection.keyboard.preview_timestamp || selection.keyboard.start || 0,
+                );
+              } else if (item.id === "screen" && selection.screen) {
+                selection.setCurrentTime(
+                  selection.screen.preview_timestamp || selection.screen.start || 0,
+                );
+              } else if (item.id === "cursor" && selection.screen) {
+                selection.setCurrentTime(
+                  selection.screen.preview_timestamp || selection.screen.start || 0,
+                );
+              }
+            }}
             className={`rounded px-3 py-1.5 text-sm ${
               tab === item.id
                 ? "bg-[var(--ink)] text-[var(--paper)]"
@@ -174,7 +216,9 @@ export function VideoWorkbench({ id, videoName }: Props) {
         <KeyboardTab
           videoSrc={videoSrc}
           keyboard={selection.keyboard}
+          duration={selection.duration}
           currentTime={selection.currentTime}
+          fps={selection.fps}
           saving={selection.saving}
           runDisabled={runDisabled}
           kbRunning={kb.kbRunning}
@@ -189,6 +233,7 @@ export function VideoWorkbench({ id, videoName }: Props) {
               preview_timestamp: selection.currentTime,
             })
           }
+          onPatch={(patch) => selection.patchTrack("keyboard", patch)}
           onSave={() =>
             selection.saveSelection(
               { syncRangeFromScreen: false, tab },

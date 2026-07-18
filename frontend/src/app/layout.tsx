@@ -32,8 +32,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable} h-full`}>
-      <body className="min-h-full font-[family-name:var(--font-body)] antialiased">
+    <html
+      lang="en"
+      className={`${display.variable} ${body.variable} ${mono.variable} h-full`}
+      suppressHydrationWarning
+    >
+      <body
+        className="min-h-full font-[family-name:var(--font-body)] antialiased"
+        suppressHydrationWarning
+      >
         {children}
       </body>
     </html>

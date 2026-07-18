@@ -9,6 +9,7 @@ OpenAI API only:
     LLM_PROVIDER=openai
     LLM_MODEL=gpt-4o-mini
     LLM_BASE_URL=https://api.openai.com/v1
+    LLM_TEMPERATURE=1
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ _DEFAULTS = {
     "LLM_PROVIDER": "openai",
     "LLM_MODEL": "gpt-4o-mini",
     "LLM_BASE_URL": "https://api.openai.com/v1",
+    "LLM_TEMPERATURE": "1",
 }
 
 _dotenv_loaded = False

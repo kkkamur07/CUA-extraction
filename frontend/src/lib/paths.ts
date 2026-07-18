@@ -19,35 +19,35 @@ export function selectionPath(id: string): string {
 }
 
 export function keystrokesPath(id: string): string {
-  return path.join(projectDir(id), "keystrokes.json");
+  return path.join(projectDir(id), "keystrokes", "keystrokes.json");
 }
 
 export function keystrokeJobPath(id: string): string {
-  return path.join(projectDir(id), "keystroke_job.json");
+  return path.join(projectDir(id), "keystrokes", "keystroke_job.json");
 }
 
 export function cursorEventsPath(id: string): string {
-  return path.join(projectDir(id), "cursor_events.jsonl");
+  return path.join(projectDir(id), "cursor", "cursor_events.jsonl");
 }
 
 export function speechFullPath(id: string): string {
-  return path.join(projectDir(id), "speech_full.json");
+  return path.join(projectDir(id), "intent", "speech_full.json");
 }
 
 export function speechTrimmedPath(id: string): string {
-  return path.join(projectDir(id), "speech_trimmed.json");
+  return path.join(projectDir(id), "intent", "speech_trimmed.json");
 }
 
 export function intentJobPath(id: string): string {
-  return path.join(projectDir(id), "intent_job.json");
+  return path.join(projectDir(id), "intent", "intent_job.json");
 }
 
 export function summaryPath(id: string): string {
-  return path.join(projectDir(id), "summary.json");
+  return path.join(projectDir(id), "summary", "summary.json");
 }
 
 export function actionIntentPairsPath(id: string): string {
-  return path.join(projectDir(id), "action_intent_pairs.json");
+  return path.join(projectDir(id), "intent", "action_intent_pairs.json");
 }
 
 /** Cursor annotation patches + manifest used for YOLO training. */

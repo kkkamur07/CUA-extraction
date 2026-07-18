@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import path from "node:path";
 import { NextResponse } from "next/server";
 
 import type { IntentJob } from "@/components/workbench/types";
@@ -14,7 +15,7 @@ import {
   isValidProjectId,
   requireSelection,
   runDirRelative,
-  spawnUvCursorDetached,
+  spawnCursorDetached,
 } from "@/lib/python";
 
 export const runtime = "nodejs";
@@ -119,6 +120,7 @@ export async function POST(
     });
   }
 
+  await fs.mkdir(path.dirname(intentJobPath(id)), { recursive: true });
   await fs.writeFile(
     intentJobPath(id),
     JSON.stringify(
@@ -137,7 +139,7 @@ export async function POST(
     "utf8",
   );
 
-  const { pid } = spawnUvCursorDetached([
+  const { pid } = spawnCursorDetached([
     "extract-intent-async",
     runDirRelative(id),
     "--json",

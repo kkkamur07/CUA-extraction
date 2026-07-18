@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..detector.cursor_events import DEFAULT_MODEL_PATH
 from .cli_handlers import (
+    run_dump_frame,
     run_extract_cursor,
     run_extract_intent,
     run_extract_intent_async,
@@ -15,6 +15,8 @@ from .cli_handlers import (
     run_pipeline_cmd,
     run_stub_workflow,
 )
+
+_DEFAULT_CURSOR_MODEL = "artifacts/models/cursor/weights/best.pt"
 
 
 def _add_run_dir(parser: argparse.ArgumentParser, help_text: str) -> None:
@@ -33,6 +35,7 @@ def main(argv: list[str] | None = None) -> None:
         "extract-keystrokes-async",
         "extract-cursor",
         "run-pipeline",
+        "dump-frame",
     }
 
     if cmd is None or cmd in {"-h", "--help"} or cmd not in commands:
@@ -46,7 +49,7 @@ def main(argv: list[str] | None = None) -> None:
             help=(
                 "stub-workflow | extract-intent | extract-intent-async | "
                 "extract-keystrokes | extract-keystrokes-async | "
-                "extract-cursor | run-pipeline"
+                "extract-cursor | run-pipeline | dump-frame"
             ),
         )
         parser.print_help()
@@ -120,8 +123,28 @@ def main(argv: list[str] | None = None) -> None:
             description="Run YOLO over Crop ROI; write cursor_events.jsonl",
         )
         _add_run_dir(parser, "Processing run directory with selection.json")
-        parser.add_argument("--model", type=str, default=str(DEFAULT_MODEL_PATH))
+        parser.add_argument("--model", type=str, default=_DEFAULT_CURSOR_MODEL)
         run_extract_cursor(parser.parse_args(argv[1:]))
+        return
+
+    if cmd == "dump-frame":
+        parser = argparse.ArgumentParser(
+            prog="cursor dump-frame",
+            description=(
+                "Write one frame as JPEG to stdout using the same OpenCV frame "
+                "indexing as annotation saving and YOLO dataset export"
+            ),
+        )
+        parser.add_argument("video", help="Path to the video file")
+        group = parser.add_mutually_exclusive_group(required=True)
+        group.add_argument("--frame", type=int, default=None, help="Frame number")
+        group.add_argument(
+            "--time",
+            type=float,
+            default=None,
+            help="Timestamp in seconds (rounded to the nearest frame)",
+        )
+        run_dump_frame(parser.parse_args(argv[1:]))
         return
 
     if cmd == "run-pipeline":

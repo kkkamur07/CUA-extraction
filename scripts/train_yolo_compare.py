@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -27,7 +28,7 @@ SHARED = [
     "--epochs",
     "100",
     "--patience",
-    "25",
+    "0",
     "--imgsz",
     "1024",
     "--seed",
@@ -38,33 +39,42 @@ SHARED = [
 
 RUNS = [
     {
-        "name": "cursor-yolo11s",
+        "suffix": "yolo11s",
         "weights": "yolo11s.pt",
-        "batch": "32",
+        "batch": "16",
+        "extra": [],
     },
     {
-        "name": "cursor-yolo11m",
+        "suffix": "yolo11m",
         "weights": "yolo11m.pt",
-        "batch": "16",
+        # Medium is less stable on ~120 images @1024; keep LR/mosaic conservative.
+        "batch": "4",
+        "extra": ["--mosaic", "0", "--lr0", "0.0005", "--optimizer", "AdamW"],
     },
 ]
 
 
-def cmds() -> list[list[str]]:
-    out: list[list[str]] = []
+def cmds(stamp: str | None = None) -> list[tuple[str, list[str]]]:
+    stamp = stamp or datetime.now().strftime("%Y%m%d-%H%M%S")
+    out: list[tuple[str, list[str]]] = []
     for run in RUNS:
+        name = f"{stamp}-{run['suffix']}"
         out.append(
-            [
-                sys.executable,
-                str(TRAIN),
-                *SHARED,
-                "--name",
-                run["name"],
-                "--weights",
-                run["weights"],
-                "--batch",
-                run["batch"],
-            ]
+            (
+                name,
+                [
+                    sys.executable,
+                    str(TRAIN),
+                    *SHARED,
+                    "--name",
+                    name,
+                    "--weights",
+                    run["weights"],
+                    "--batch",
+                    run["batch"],
+                    *run.get("extra", []),
+                ],
+            )
         )
     return out
 
@@ -81,13 +91,21 @@ def main() -> None:
         action="store_true",
         help="Only prepare the stratified dataset once (print + optional run).",
     )
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="Forwarded to train_yolo.py (e.g. 0).",
+    )
     args = parser.parse_args()
+
+    device_args = ["--device", args.device] if args.device is not None else []
 
     if args.prepare_only:
         prepare = [
             sys.executable,
             str(TRAIN),
             *SHARED,
+            *device_args,
             "--prepare-only",
         ]
         print(" ".join(prepare))
@@ -95,16 +113,19 @@ def main() -> None:
             raise SystemExit(subprocess.call(prepare, cwd=REPO))
         return
 
-    for cmd in cmds():
-        print(" ".join(cmd))
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    for name, cmd in cmds(stamp):
+        full = [*cmd, *device_args]
+        print(" ".join(full))
         if args.run:
-            code = subprocess.call(cmd, cwd=REPO)
+            code = subprocess.call(full, cwd=REPO)
             if code != 0:
                 raise SystemExit(code)
+            print(f"Finished run: artifacts/models/{name}")
 
     print(
         "\nAfter both finish, compare val mAP50 / mAP50-95 under "
-        "artifacts/models/cursor-yolo11s|m/ and copy the winner to "
+        f"artifacts/models/{stamp}-yolo11s|m/ and copy the winner to "
         "artifacts/models/cursor/weights/best.pt"
     )
 

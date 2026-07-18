@@ -104,7 +104,7 @@ class PipelineError(RuntimeError):
 
 
 def load_keystroke_raw_events(run_dir: Path) -> list[KeystrokeRawEvent]:
-    """Load Keystroke Raw events from ``keystrokes.json`` (events list)."""
+    """Load Keystroke Raw events from ``keystrokes/keystrokes.json`` (events list)."""
     path = run_dir / KEYSTROKES_FILENAME
     if not path.is_file():
         raise FileNotFoundError(f"Missing Keystroke artifact: {path}")
@@ -134,7 +134,7 @@ def load_keystroke_raw_events(run_dir: Path) -> list[KeystrokeRawEvent]:
 
 
 def load_cursor_raw_events(run_dir: Path) -> list[CursorRawEvent]:
-    """Load Cursor observation Raw events from ``cursor_events.jsonl``."""
+    """Load Cursor observation Raw events from ``cursor/cursor_events.jsonl``."""
     path = run_dir / CURSOR_EVENTS_FILENAME
     if not path.is_file():
         raise FileNotFoundError(f"Missing Cursor observation artifact: {path}")
@@ -164,7 +164,7 @@ def load_cursor_raw_events(run_dir: Path) -> list[CursorRawEvent]:
 
 
 def load_summary_text(run_dir: Path) -> str:
-    """Load Workflow summary text from ``summary.json``."""
+    """Load Workflow summary text from ``summary/summary.json``."""
     path = run_dir / SUMMARY_FILENAME
     if not path.is_file():
         raise FileNotFoundError(f"Missing Workflow summary artifact: {path}")
@@ -178,7 +178,7 @@ def load_summary_text(run_dir: Path) -> str:
 
 
 def load_action_intent_pairs(run_dir: Path) -> list[ActionIntentPair]:
-    """Load Action–Intent pairs from ``action_intent_pairs.json``."""
+    """Load Action–Intent pairs from ``intent/action_intent_pairs.json``."""
     path = run_dir / ACTION_INTENT_PAIRS_FILENAME
     if not path.is_file():
         raise FileNotFoundError(f"Missing Action–Intent pairs artifact: {path}")

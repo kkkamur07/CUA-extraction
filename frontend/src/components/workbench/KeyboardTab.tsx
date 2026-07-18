@@ -10,7 +10,9 @@ import type { KeystrokeJob } from "./types";
 type Props = {
   videoSrc: string;
   keyboard: TrackSelection;
+  duration: number;
   currentTime: number;
+  fps: number;
   saving: boolean;
   runDisabled: boolean;
   kbRunning: boolean;
@@ -20,6 +22,7 @@ type Props = {
   onTimeUpdate: (t: number) => void;
   onMeta: (meta: { duration: number; width: number; height: number }) => void;
   onRoiChange: (roi: TrackSelection["roi"]) => void;
+  onPatch: (patch: Partial<TrackSelection>) => void;
   onSave: () => void;
   onRun: () => void;
   onSelectEvent: (event: KeystrokeRawEvent, index: number) => void;
@@ -28,7 +31,9 @@ type Props = {
 export function KeyboardTab({
   videoSrc,
   keyboard,
+  duration,
   currentTime,
+  fps,
   saving,
   runDisabled,
   kbRunning,
@@ -38,6 +43,7 @@ export function KeyboardTab({
   onTimeUpdate,
   onMeta,
   onRoiChange,
+  onPatch,
   onSave,
   onRun,
   onSelectEvent,
@@ -53,6 +59,7 @@ export function KeyboardTab({
           roi={keyboard.roi}
           onRoiChange={onRoiChange}
           currentTime={currentTime}
+          fps={fps}
           onTimeUpdate={onTimeUpdate}
           onMeta={onMeta}
         />
@@ -60,15 +67,60 @@ export function KeyboardTab({
           <p className="text-xs text-[var(--muted)]">
             Keyboard ROI only. Uses the shared time range from Screen extraction.
           </p>
-          <div className="grid grid-cols-2 gap-2 font-mono text-xs text-[var(--muted)]">
-            <span>x {keyboard.roi.x}</span>
-            <span>y {keyboard.roi.y}</span>
-            <span>w {keyboard.roi.width}</span>
-            <span>h {keyboard.roi.height}</span>
-            <span className="col-span-2">
-              range {keyboard.start.toFixed(1)}s – {keyboard.end.toFixed(1)}s
-            </span>
+          <div>
+            <label className="text-xs uppercase tracking-wide text-[var(--muted)]">
+              Crop ROI · preview (s)
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(duration || 0, currentTime, 1)}
+              step={0.1}
+              value={Number.isFinite(currentTime) ? currentTime : 0}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                onTimeUpdate(value);
+                onPatch({ preview_timestamp: value });
+              }}
+              className="mt-2 w-full accent-[var(--accent)]"
+            />
+            <p className="mt-1 font-mono text-sm">{currentTime.toFixed(2)}s</p>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            {(
+              [
+                ["x", keyboard.roi.x],
+                ["y", keyboard.roi.y],
+                ["w", keyboard.roi.width],
+                ["h", keyboard.roi.height],
+              ] as const
+            ).map(([key, value]) => (
+              <label key={key} className="text-sm">
+                <span className="text-xs uppercase tracking-wide text-[var(--muted)]">
+                  {key}
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={value}
+                  onChange={(event) => {
+                    const n = Math.max(0, Math.round(Number(event.target.value) || 0));
+                    const roi = { ...keyboard.roi };
+                    if (key === "x") roi.x = n;
+                    else if (key === "y") roi.y = n;
+                    else if (key === "w") roi.width = Math.max(1, n);
+                    else roi.height = Math.max(1, n);
+                    onRoiChange(roi);
+                  }}
+                  className="mt-1 w-full rounded border border-[var(--line)] bg-[var(--paper)] px-2 py-1.5 font-mono text-sm"
+                />
+              </label>
+            ))}
+          </div>
+          <p className="font-mono text-xs text-[var(--muted)]">
+            range {keyboard.start.toFixed(1)}s – {keyboard.end.toFixed(1)}s
+          </p>
           <button
             type="button"
             disabled={saving}

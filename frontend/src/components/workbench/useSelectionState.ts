@@ -36,10 +36,11 @@ export function useSelectionState(projectId: string, videoName: string) {
 
   const onMeta = useCallback(
     ({ duration: d, width: w, height: h }: { duration: number; width: number; height: number }) => {
-      setDuration(d);
+      // Frame preview may report duration 0 — don't clobber ffprobe duration.
+      setDuration((prev) => (d > 0 ? d : prev));
       setWidth(w);
       setHeight(h);
-      ensureTracks(w, h, d);
+      ensureTracks(w, h, d > 0 ? d : 0);
     },
     [ensureTracks],
   );

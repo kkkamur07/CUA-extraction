@@ -1,19 +1,17 @@
 """Processing run artifact contract and Workflow sample stub assembler.
 
-Intermediate filenames under ``runs/<id>/``:
+Layout under ``runs/<id>/``:
 
 - ``selection.json`` — Project selection (Crop ROI, Keyboard ROI, time range)
-- ``keystrokes.json`` — Keystroke Raw events from the keyboard detector
-- ``keystroke_job.json`` — optional async Keystroke job progress (UI polling)
-- ``intent_job.json`` — optional async Intent job progress (UI polling)
-- ``cursor_events.jsonl`` — one Cursor observation JSON object per line
-- ``speech_full.json`` — full-video ASR (feeds Workflow summary)
-- ``speech_trimmed.json`` — trimmed-range ASR (feeds Action–Intent pairs)
-- ``action_intent_pairs.json`` — list of Action–Intent pairs
 - ``workflow_sample.json`` — published Workflow sample
-
-Optional: ``summary.json`` with ``{"summary": "..."}`` if the summary is
-written separately; prefer the ``summary`` field on the Workflow sample.
+- ``keystrokes/keystrokes.json`` — Keystroke Raw events
+- ``keystrokes/keystroke_job.json`` — async Keystroke job progress (UI polling)
+- ``cursor/cursor_events.jsonl`` — one Cursor observation JSON object per line
+- ``intent/speech_full.json`` — full-video ASR (feeds Workflow summary)
+- ``intent/speech_trimmed.json`` — trimmed-range ASR (feeds Action–Intent pairs)
+- ``intent/action_intent_pairs.json`` — list of Action–Intent pairs
+- ``intent/intent_job.json`` — async Intent job progress (UI polling)
+- ``summary/summary.json`` — optional task summary; prefer field on Workflow sample
 """
 
 from __future__ import annotations
@@ -29,17 +27,17 @@ from .models import (
     WorkflowSample,
 )
 
-# Exact intermediate names for a Processing run directory.
+# Exact intermediate names for a Processing run directory (relative to run root).
 SELECTION_FILENAME = "selection.json"
-KEYSTROKES_FILENAME = "keystrokes.json"
-KEYSTROKE_JOB_FILENAME = "keystroke_job.json"
-INTENT_JOB_FILENAME = "intent_job.json"
-CURSOR_EVENTS_FILENAME = "cursor_events.jsonl"
-SPEECH_FULL_FILENAME = "speech_full.json"
-SPEECH_TRIMMED_FILENAME = "speech_trimmed.json"
-ACTION_INTENT_PAIRS_FILENAME = "action_intent_pairs.json"
+KEYSTROKES_FILENAME = "keystrokes/keystrokes.json"
+KEYSTROKE_JOB_FILENAME = "keystrokes/keystroke_job.json"
+INTENT_JOB_FILENAME = "intent/intent_job.json"
+CURSOR_EVENTS_FILENAME = "cursor/cursor_events.jsonl"
+SPEECH_FULL_FILENAME = "intent/speech_full.json"
+SPEECH_TRIMMED_FILENAME = "intent/speech_trimmed.json"
+ACTION_INTENT_PAIRS_FILENAME = "intent/action_intent_pairs.json"
 WORKFLOW_SAMPLE_FILENAME = "workflow_sample.json"
-SUMMARY_FILENAME = "summary.json"  # optional; prefer field on Workflow sample
+SUMMARY_FILENAME = "summary/summary.json"
 
 
 def _roi_from_dict(raw: dict[str, Any]) -> CropROI:

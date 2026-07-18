@@ -113,6 +113,7 @@ export function CursorTab({
             cropToRoi={screen.roi}
             onBbox={onBbox}
             currentTime={currentTime}
+            fps={fps}
             onTimeUpdate={onTimeUpdate}
             onMeta={onMeta}
           />

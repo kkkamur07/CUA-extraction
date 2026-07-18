@@ -6,8 +6,8 @@ import { cursorEventsPath } from "@/lib/paths";
 import {
   isValidProjectId,
   requireSelection,
+  runCursor,
   runDirRelative,
-  runUvCursor,
 } from "@/lib/python";
 
 export const runtime = "nodejs";
@@ -76,13 +76,13 @@ export async function POST(
         weights,
         error:
           `YOLO weights not found at ${weights.path}. ` +
-          "Train first: uv run python scripts/train_yolo.py --selection runs/<id>/selection.json",
+          "Train first: .venv/bin/python scripts/train_yolo.py --selection runs/<id>/selection.json",
       },
       { status: 400 },
     );
   }
 
-  const { code, stdout, stderr } = await runUvCursor([
+  const { code, stdout, stderr } = await runCursor([
     "extract-cursor",
     runDirRelative(id),
   ]);

@@ -38,10 +38,27 @@ For each interval output:
 - "quote": a short verbatim snippet from the transcript that supports the annotation.
 
 Merge filler / small talk into the neighboring interval. Cover all speech.
+Do NOT treat challenge portals, practice-model apps, challenge IDs, or third-party tutorial branding as workflow phases — fold any such chatter into the nearest modeling interval.
 Reply with ONLY a JSON object: {"intervals": [{"start_t": number, "end_t": number, "action": string, "intent": string, "quote": string}]}"""
 
-SUMMARY_SYSTEM = """You summarize a tutorial workflow for computer-use training data.
-Given intent annotations of the whole session, write a first-person task "summary" paragraph narrating the workflow from start to finish (what is done and why, 3-6 sentences, style: "I need to ... I'll ... Finally, I'll ...").
+SUMMARY_SYSTEM = """You write a short lab overview of what a CAD modeling session builds.
+Audience: a lab reviewer skimming training data. They only need to know what is being built, the key specs, and how it is verified — not how the UI was operated.
+
+Given intent annotations, write a third-person "summary" of 2-4 sentences.
+
+Must cover:
+- What is being built (part + material/units when known)
+- Key drawing specs and feature types (profile dims, extrusions/cuts, holes, fillets, etc.)
+- Verification target when known (e.g. mass)
+
+Good example tone:
+"This session builds an ABS plastic part in millimeters (MMGS) from a dimensioned front-plane profile, including an 85 mm mid-plane extrusion, angled geometry, arc cuts, tombstone features, counterbore holes, and fillets. Final verification confirms a mass of 204 g."
+
+Hard rules:
+- Do NOT write first-person ("I", "I'll", "we're going to").
+- Do NOT narrate clicks, shortcuts, menus, Hole Wizard steps, or tool-by-tool actions.
+- Do NOT mention challenge apps, challenge IDs, practice-model portals, or third-party branding (e.g. TooTallToby).
+
 Reply with ONLY a JSON object: {"summary": string}"""
 
 
@@ -51,6 +68,9 @@ class AudioJob:
     duration: float
     chunk_s: int = 600
     language: str | None = None
+    # When set, ASR + intent only cover this absolute video time window (seconds).
+    start_t: float | None = None
+    end_t: float | None = None
 
     state: str = "pending"     # extracting | transcribing | summarizing | done | error
     progress: float = 0.0
@@ -61,16 +81,33 @@ class AudioJob:
     doc: dict | None = None
 
 
+def _job_range(job: AudioJob) -> tuple[float, float]:
+    """Absolute [start, end) seconds to process; defaults to the full video."""
+    start = float(job.start_t) if job.start_t is not None else 0.0
+    end = float(job.end_t) if job.end_t is not None else float(job.duration)
+    start = max(0.0, start)
+    end = min(float(job.duration), end)
+    if end <= start:
+        raise RuntimeError(f"invalid audio range: start={start} end={end}")
+    return start, end
+
+
 def _extract_chunks(job: AudioJob, workdir: Path) -> list[tuple[float, Path]]:
     """WAV chunk per chunk_s window. Returns [(start_offset_s, path)]."""
     exe = imageio_ffmpeg.get_ffmpeg_exe()
-    n = max(1, math.ceil(job.duration / job.chunk_s))
+    range_start, range_end = _job_range(job)
+    span = range_end - range_start
+    n = max(1, math.ceil(span / job.chunk_s))
     chunks = []
     for i in range(n):
-        start = i * job.chunk_s
+        start = range_start + i * job.chunk_s
+        remaining = range_end - start
+        if remaining <= 1e-6:
+            break
+        chunk_t = min(float(job.chunk_s), remaining)
         out = workdir / f"chunk_{i:03d}.wav"
         cmd = [exe, "-y", "-v", "error",
-               "-ss", str(start), "-t", str(job.chunk_s),
+               "-ss", str(start), "-t", str(chunk_t),
                "-i", job.video_path,
                "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", str(out)]
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -141,9 +178,12 @@ def run(job: AudioJob):
                     segs.append(TranscriptSegment(s.start_t + offset, s.end_t + offset, s.text))
                 job.progress = 0.15 + 0.55 * (i + 1) / len(chunks)
         segs.sort(key=lambda s: s.start_t)
+        range_start, range_end = _job_range(job)
+        # Keep only segments that overlap the selection window.
+        segs = [s for s in segs if not (s.end_t < range_start or s.start_t > range_end)]
         job.transcript = segs
         if not segs:
-            raise RuntimeError("no speech found in the audio track")
+            raise RuntimeError("no speech found in the selected audio range")
 
         job.state = "summarizing"
         intents: list[dict] = []
@@ -166,7 +206,12 @@ def run(job: AudioJob):
         job.doc = {
             "video": job.video_path,
             "duration": round(job.duration, 3),
-            "params": {"chunk_s": job.chunk_s, "language": job.language},
+            "params": {
+                "chunk_s": job.chunk_s,
+                "language": job.language,
+                "start_t": range_start,
+                "end_t": range_end,
+            },
             "providers": {"asr": transcriber.info(), "llm": llm.info()},
             "task_summary": job.task_summary,
             "n_transcript_segments": len(segs),

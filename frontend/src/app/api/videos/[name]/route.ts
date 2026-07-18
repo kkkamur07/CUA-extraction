@@ -6,6 +6,9 @@ import { videoFilePath } from "@/lib/paths";
 
 export const runtime = "nodejs";
 
+/** Default slice when the client sends an open-ended Range (bytes=N-). */
+const DEFAULT_CHUNK = 4 * 1024 * 1024;
+
 function contentType(name: string): string {
   const lower = name.toLowerCase();
   if (lower.endsWith(".webm")) return "video/webm";
@@ -34,6 +37,11 @@ export async function GET(
   const stat = statSync(filePath);
   const range = request.headers.get("range");
   const type = contentType(decoded);
+  const commonHeaders = {
+    "Content-Type": type,
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "public, max-age=3600",
+  };
 
   if (range) {
     const match = /bytes=(\d+)-(\d*)/.exec(range);
@@ -41,22 +49,24 @@ export async function GET(
       return NextResponse.json({ error: "Invalid range" }, { status: 416 });
     }
     const start = Number(match[1]);
-    const end = match[2] ? Number(match[2]) : Math.min(start + 1024 * 1024 - 1, stat.size - 1);
-    if (start >= stat.size || end >= stat.size || start > end) {
+    const end = match[2]
+      ? Math.min(Number(match[2]), stat.size - 1)
+      : Math.min(start + DEFAULT_CHUNK - 1, stat.size - 1);
+
+    if (start >= stat.size || start > end) {
       return new NextResponse(null, {
         status: 416,
         headers: { "Content-Range": `bytes */${stat.size}` },
       });
     }
+
     const stream = createReadStream(filePath, { start, end });
     return new NextResponse(Readable.toWeb(stream) as ReadableStream, {
       status: 206,
       headers: {
-        "Content-Type": type,
+        ...commonHeaders,
         "Content-Length": String(end - start + 1),
         "Content-Range": `bytes ${start}-${end}/${stat.size}`,
-        "Accept-Ranges": "bytes",
-        "Cache-Control": "public, max-age=3600",
       },
     });
   }
@@ -64,10 +74,8 @@ export async function GET(
   const stream = createReadStream(filePath);
   return new NextResponse(Readable.toWeb(stream) as ReadableStream, {
     headers: {
-      "Content-Type": type,
+      ...commonHeaders,
       "Content-Length": String(stat.size),
-      "Accept-Ranges": "bytes",
-      "Cache-Control": "public, max-age=3600",
     },
   });
 }

@@ -1,5 +1,9 @@
 """Processing run contract, sample types, and pipeline orchestration."""
 
+from __future__ import annotations
+
+from typing import Any
+
 from .models import (
     ActionIntentPair,
     CropROI,
@@ -9,22 +13,6 @@ from .models import (
     RawEvent,
     TrackSelection,
     WorkflowSample,
-)
-from .pipeline import (
-    ALL_STEPS,
-    STEP_ASSEMBLE,
-    STEP_CURSOR,
-    STEP_INTENT,
-    STEP_KEYSTROKES,
-    PipelineError,
-    PipelineResult,
-    StepResult,
-    assemble_workflow_sample,
-    load_action_intent_pairs,
-    load_cursor_raw_events,
-    load_keystroke_raw_events,
-    load_summary_text,
-    run_pipeline,
 )
 from .workflow import (
     ACTION_INTENT_PAIRS_FILENAME,
@@ -77,3 +65,28 @@ __all__ = [
     "run_pipeline",
     "write_stub_workflow_sample",
 ]
+
+_PIPELINE_EXPORTS = {
+    "ALL_STEPS",
+    "STEP_ASSEMBLE",
+    "STEP_CURSOR",
+    "STEP_INTENT",
+    "STEP_KEYSTROKES",
+    "PipelineError",
+    "PipelineResult",
+    "StepResult",
+    "assemble_workflow_sample",
+    "load_action_intent_pairs",
+    "load_cursor_raw_events",
+    "load_keystroke_raw_events",
+    "load_summary_text",
+    "run_pipeline",
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _PIPELINE_EXPORTS:
+        from . import pipeline
+
+        return getattr(pipeline, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

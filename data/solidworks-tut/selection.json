@@ -4,25 +4,25 @@
   "fps": 30,
   "frame_width": 1920,
   "frame_height": 1080,
-  "preview_timestamp": 737.5,
+  "preview_timestamp": 98.2,
   "roi": {
-    "x": 369,
-    "y": 19,
-    "width": 1524,
-    "height": 777
+    "x": 365,
+    "y": 20,
+    "width": 1528,
+    "height": 962
   },
   "start": 220,
   "end": 1050,
   "screen": {
     "roi": {
-      "x": 369,
-      "y": 19,
-      "width": 1524,
-      "height": 777
+      "x": 365,
+      "y": 20,
+      "width": 1528,
+      "height": 962
     },
     "start": 220,
     "end": 1050,
-    "preview_timestamp": 737.5
+    "preview_timestamp": 98.2
   },
   "keyboard": {
     "roi": {
@@ -33,6 +33,6 @@
     },
     "start": 220,
     "end": 1050,
-    "preview_timestamp": 737.5
+    "preview_timestamp": 278.6
   }
 }

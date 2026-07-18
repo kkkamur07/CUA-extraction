@@ -1,6 +1,6 @@
 """YOLO Cursor observation extraction for a Processing run.
 
-Writes ``runs/<id>/cursor_events.jsonl`` — one Raw event JSON object per line.
+Writes ``runs/<id>/cursor/cursor_events.jsonl`` — one Raw event JSON object per line.
 Coordinates are **full-frame source** pixels (Crop ROI offset applied), not
 Crop-ROI-relative.
 """
@@ -51,7 +51,7 @@ def _resolve_model_path(model_path: Path | str | None, run_dir: Path) -> Path:
         raise FileNotFoundError(
             f"Trained YOLO weights not found: {resolved}\n"
             f"Train a cursor detector first, e.g.:\n"
-            f"  uv run python scripts/train_yolo.py "
+            f"  .venv/bin/python scripts/train_yolo.py "
             f"--selection runs/<id>/selection.json\n"
             f"Expected default weights at: {hint}"
         )
@@ -93,6 +93,7 @@ def extract_cursor_events(
 
     roi, start_s, end_s = _crop_roi_and_range(selection)
     out_path = run_dir / CURSOR_EVENTS_FILENAME
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     video = cv2.VideoCapture(str(video_path))
     if not video.isOpened():
@@ -130,7 +131,12 @@ def extract_cursor_events(
 
     import torch
 
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    if torch.cuda.is_available():
+        device: str | int = 0
+    elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
     model = YOLO(str(weights))
 
     processed = 0

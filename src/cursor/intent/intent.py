@@ -1,7 +1,8 @@
 """Intent extraction via in-tree ``cursor.intent.audio_intent`` pipeline.
 
-Writes ``speech_full.json``, ``speech_trimmed.json``, ``summary.json``,
-and ``action_intent_pairs.json``. ASR + LLM use the OpenAI API.
+Writes ``intent/speech_full.json``, ``intent/speech_trimmed.json``,
+``summary/summary.json``, and ``intent/action_intent_pairs.json``.
+ASR + LLM use the OpenAI API.
 """
 
 from __future__ import annotations
@@ -72,6 +73,7 @@ def video_duration_s(video_path: Path) -> float:
 
 
 def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
@@ -127,7 +129,7 @@ def write_intent_artifacts(
     full = SpeechArtifact(
         text=" ".join(s.text for s in segments),
         segments=segments,
-        range=SpeechRange(start_t=0.0, end_t=None),
+        range=SpeechRange(start_t=start_t, end_t=end_t),
         provider=provider if isinstance(provider, dict) else None,
     )
     trimmed = SpeechArtifact(
@@ -160,6 +162,7 @@ def write_intent_artifacts(
             "quote": str(iv.get("quote", "")),
         }
         for iv in (job.intents or [])
+        if not (float(iv["end_t"]) < start_t or float(iv["start_t"]) > end_t)
     ]
     _write_json(
         pairs_path,
@@ -193,16 +196,20 @@ def extract_intent(
 
     selection = load_project_selection(run_dir)
     video_path = resolve_video_path(selection.video)
+    start_t = float(selection.screen.start)
+    end_t = float(selection.screen.end)
     job = audio_intent.AudioJob(
         video_path=str(video_path),
         duration=video_duration_s(video_path),
         chunk_s=int(chunk_s),
         language=language,
+        start_t=start_t,
+        end_t=end_t,
     )
     audio_intent.run(job)
     return write_intent_artifacts(
         run_dir,
         job,
-        start_t=float(selection.screen.start),
-        end_t=float(selection.screen.end),
+        start_t=start_t,
+        end_t=end_t,
     )

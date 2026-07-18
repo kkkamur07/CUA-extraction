@@ -1,4 +1,4 @@
-"""Audit cursor annotations for duplicates, conflicts, and temporal redundancy."""
+"""Audit cursor annotations for duplicates, conflicts, alignment, and temporal redundancy."""
 
 from __future__ import annotations
 
@@ -9,6 +9,13 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+import cv2
+
+from clean_cursor_manifest import (
+    KEEP_OFFSET_PX,
+    check_row,
+    resolve_video_path,
+)
 from train_yolo import canonical_label
 
 
@@ -37,6 +44,54 @@ def temporal_groups(frame_numbers: list[int], gap: int) -> list[list[int]]:
             groups.append([])
         groups[-1].append(frame_number)
     return groups
+
+
+def alignment_report(
+    rows: list[dict[str, Any]],
+    selection_path: Path,
+) -> dict[str, Any]:
+    """Template-match each patch against its training frame.
+
+    A box whose patch is found offset from the annotated position (or not
+    found at all) was drawn on a different frame than the one trained on —
+    run scripts/clean_cursor_manifest.py to snap or quarantine those rows.
+    """
+    repo_root = selection_path.parent.parent.parent
+    video_path, roi = resolve_video_path(selection_path)
+    video = cv2.VideoCapture(str(video_path))
+    if not video.isOpened():
+        return {"error": f"Could not open video: {video_path}"}
+
+    misaligned: list[dict[str, Any]] = []
+    unreadable: list[int] = []
+    frame_cache: dict[int, Any] = {}
+    try:
+        for row in rows:
+            result = check_row(row, video, roi, repo_root, frame_cache)
+            if result is None:
+                unreadable.append(row["frame_number"])
+                continue
+            dx, dy, score = result
+            if max(abs(dx), abs(dy)) > KEEP_OFFSET_PX:
+                misaligned.append(
+                    {
+                        "frame_number": row["frame_number"],
+                        "label": row["label"],
+                        "dx": dx,
+                        "dy": dy,
+                        "score": round(score, 3),
+                    }
+                )
+    finally:
+        video.release()
+
+    return {
+        "checked": len(rows),
+        "misaligned": len(misaligned),
+        "misaligned_rows": misaligned,
+        "unreadable_frames": unreadable,
+        "tolerance_px": KEEP_OFFSET_PX,
+    }
 
 
 def audit(manifest_path: Path, selection_path: Path) -> dict[str, Any]:
@@ -110,6 +165,7 @@ def audit(manifest_path: Path, selection_path: Path) -> dict[str, Any]:
         "missing_patch_paths": missing_paths,
         "invalid_boxes": invalid_boxes,
         "ambiguous_records": sum(bool(row.get("ambiguous")) for row in rows),
+        "alignment": alignment_report(rows, selection_path),
         "temporal_groups_within_90_frames": len(groups),
         "largest_temporal_group": max((len(group) for group in groups), default=0),
         "canonicalization": {
@@ -121,6 +177,7 @@ def audit(manifest_path: Path, selection_path: Path) -> dict[str, Any]:
             "Keep one label per frame/geometry box after canonicalization.",
             "Split validation by temporal groups to avoid adjacent-frame leakage.",
             "Add more pencil and crosshair examples before training separate classes.",
+            "Run scripts/clean_cursor_manifest.py if any rows are misaligned.",
         ],
     }
     return report

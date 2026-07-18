@@ -19,8 +19,19 @@ type Props = {
   onRoiChange?: (roi: CropROI) => void;
   onBbox?: (box: CropROI, patchDataUrl: string) => void;
   currentTime: number;
+  /**
+   * When set, frames are fetched by frame number (round(currentTime * fps))
+   * through the same decoder used for training export, so the previewed
+   * pixels match the trained pixels exactly.
+   */
+  fps?: number;
   onTimeUpdate: (time: number) => void;
-  onMeta: (meta: { duration: number; width: number; height: number; fpsHint: number }) => void;
+  onMeta: (meta: {
+    duration: number;
+    width: number;
+    height: number;
+    fpsHint: number;
+  }) => void;
   /** When mode=bbox, crop display to this ROI. */
   cropToRoi?: CropROI | null;
 };
@@ -36,20 +47,26 @@ export function VideoCanvas({
   onRoiChange,
   onBbox,
   currentTime,
-  onTimeUpdate,
+  fps,
   onMeta,
   cropToRoi = null,
 }: Props) {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [natural, setNatural] = useState({ width: 0, height: 0 });
+  const frameRef = useRef<ImageBitmap | null>(null);
+  const naturalRef = useRef({ width: 0, height: 0 });
+  const metaSentRef = useRef(false);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
   const dragRef = useRef<{ x: number; y: number } | null>(null);
+  const draftRef = useRef<CropROI | null>(null);
   const [draft, setDraft] = useState<CropROI | null>(null);
 
   const draw = useCallback(() => {
-    const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || !natural.width) return;
+    const frame = frameRef.current;
+    const { width: nw, height: nh } = naturalRef.current;
+    if (!canvas || !frame || !nw || !nh) return;
+
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -57,7 +74,7 @@ export function VideoCanvas({
       canvas.width = cropToRoi.width;
       canvas.height = cropToRoi.height;
       ctx.drawImage(
-        video,
+        frame,
         cropToRoi.x,
         cropToRoi.y,
         cropToRoi.width,
@@ -68,12 +85,12 @@ export function VideoCanvas({
         cropToRoi.height,
       );
     } else {
-      canvas.width = natural.width;
-      canvas.height = natural.height;
-      ctx.drawImage(video, 0, 0, natural.width, natural.height);
+      canvas.width = nw;
+      canvas.height = nh;
+      ctx.drawImage(frame, 0, 0, nw, nh);
       const box = draft ?? roi;
       ctx.strokeStyle = "#e11d48";
-      ctx.lineWidth = Math.max(2, Math.round(natural.width / 600));
+      ctx.lineWidth = Math.max(2, Math.round(nw / 600));
       ctx.strokeRect(box.x, box.y, box.width, box.height);
     }
 
@@ -82,37 +99,135 @@ export function VideoCanvas({
       ctx.lineWidth = 2;
       ctx.strokeRect(draft.x, draft.y, draft.width, draft.height);
     }
-  }, [cropToRoi, draft, mode, natural.height, natural.width, roi]);
+    setReady(true);
+  }, [cropToRoi, draft, mode, roi]);
 
   useEffect(() => {
     draw();
-  }, [draw, currentTime]);
+  }, [draw]);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (Math.abs(video.currentTime - currentTime) > 0.04) {
-      video.currentTime = currentTime;
-    }
-  }, [currentTime]);
+    metaSentRef.current = false;
+    setError("");
+    naturalRef.current = { width: 0, height: 0 };
+    frameRef.current?.close();
+    frameRef.current = null;
+  }, [videoSrc]);
+
+  const frameNumber =
+    fps && fps > 0 ? Math.round(currentTime * fps) : null;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    // Debounce scrubbing so we don't spawn a decoder on every slider tick.
+    const timer = window.setTimeout(async () => {
+      setReady(false);
+      setError("");
+      try {
+        const url =
+          frameNumber !== null
+            ? `${videoSrc}/frame?frame=${frameNumber}`
+            : `${videoSrc}/frame?t=${encodeURIComponent(String(currentTime))}`;
+        const res = await fetch(url, { signal: controller.signal });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          throw new Error(body?.error || `Frame request failed (${res.status})`);
+        }
+        const blob = await res.blob();
+        if (cancelled) return;
+        const bitmap = await createImageBitmap(blob);
+        if (cancelled) {
+          bitmap.close();
+          return;
+        }
+        frameRef.current?.close();
+        frameRef.current = bitmap;
+        naturalRef.current = { width: bitmap.width, height: bitmap.height };
+        if (!metaSentRef.current) {
+          metaSentRef.current = true;
+          onMeta({
+            duration: 0,
+            width: bitmap.width,
+            height: bitmap.height,
+            fpsHint: 30,
+          });
+        }
+        draw();
+      } catch (err) {
+        if (cancelled || (err instanceof DOMException && err.name === "AbortError")) {
+          return;
+        }
+        setReady(false);
+        setError(err instanceof Error ? err.message : "Failed to decode frame");
+      }
+    }, 100);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+    // draw/onMeta intentionally omitted — load once per time/src; draw effect handles overlays.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoSrc, currentTime, frameNumber]);
 
   const pointFromEvent = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    // Avoid divide-by-zero before the first frame paints (canvas defaults to 300×150).
+    const cssW = rect.width || 1;
+    const cssH = rect.height || 1;
+    const scaleX = (canvas.width || cssW) / cssW;
+    const scaleY = (canvas.height || cssH) / cssH;
     return {
-      x: clamp((event.clientX - rect.left) * scaleX, 0, canvas.width),
-      y: clamp((event.clientY - rect.top) * scaleY, 0, canvas.height),
+      x: clamp((event.clientX - rect.left) * scaleX, 0, canvas.width || cssW),
+      y: clamp((event.clientY - rect.top) * scaleY, 0, canvas.height || cssH),
     };
   };
 
+  const commitDraft = useCallback(() => {
+    const box = draftRef.current;
+    dragRef.current = null;
+    draftRef.current = null;
+    setDraft(null);
+    if (!box || box.width < 2 || box.height < 2) return;
+    if (mode === "roi") {
+      onRoiChange?.(box);
+    } else if (mode === "bbox" && onBbox && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const patch = document.createElement("canvas");
+      patch.width = box.width;
+      patch.height = box.height;
+      const ctx = patch.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(
+          canvas,
+          box.x,
+          box.y,
+          box.width,
+          box.height,
+          0,
+          0,
+          box.width,
+          box.height,
+        );
+        onBbox(box, patch.toDataURL("image/png"));
+      }
+    }
+  }, [mode, onBbox, onRoiChange]);
+
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = pointFromEvent(event);
     dragRef.current = point;
-    setDraft({ x: point.x, y: point.y, width: 0, height: 0 });
+    const next = { x: point.x, y: point.y, width: 0, height: 0 };
+    draftRef.current = next;
+    setDraft(next);
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -122,78 +237,38 @@ export function VideoCanvas({
     const top = Math.min(dragRef.current.y, point.y);
     const width = Math.abs(point.x - dragRef.current.x);
     const height = Math.abs(point.y - dragRef.current.y);
-    setDraft({
+    const next = {
       x: Math.round(left),
       y: Math.round(top),
       width: Math.round(width),
       height: Math.round(height),
-    });
+    };
+    draftRef.current = next;
+    setDraft(next);
   };
 
-  const onPointerUp = () => {
-    if (!draft || draft.width < 2 || draft.height < 2) {
-      dragRef.current = null;
-      setDraft(null);
-      return;
+  const onPointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    if (mode === "roi") {
-      onRoiChange?.(draft);
-    } else if (mode === "bbox" && onBbox && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const patch = document.createElement("canvas");
-      patch.width = draft.width;
-      patch.height = draft.height;
-      const ctx = patch.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(
-          canvas,
-          draft.x,
-          draft.y,
-          draft.width,
-          draft.height,
-          0,
-          0,
-          draft.width,
-          draft.height,
-        );
-        onBbox(draft, patch.toDataURL("image/png"));
-      }
-    }
-    dragRef.current = null;
-    setDraft(null);
+    commitDraft();
   };
 
   return (
-    <div className="space-y-2">
-      <video
-        ref={videoRef}
-        src={videoSrc}
-        className="hidden"
-        preload="auto"
-        onLoadedMetadata={(event) => {
-          const video = event.currentTarget;
-          const width = video.videoWidth;
-          const height = video.videoHeight;
-          setNatural({ width, height });
-          onMeta({
-            duration: video.duration || 0,
-            width,
-            height,
-            fpsHint: 30,
-          });
-          draw();
-        }}
-        onSeeked={draw}
-        onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
-      />
+    <div className="relative space-y-2">
       <canvas
         ref={canvasRef}
         tabIndex={0}
-        className="max-h-[70vh] w-full cursor-crosshair rounded border border-[var(--line)] bg-black outline-none"
+        className="max-h-[70vh] w-full cursor-crosshair touch-none rounded border border-[var(--line)] bg-black outline-none"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
       />
+      {!ready && !error && (
+        <p className="text-sm text-[var(--muted)]">Decoding video frame…</p>
+      )}
+      {error && <p className="text-sm text-rose-700">{error}</p>}
       <p className="text-sm text-[var(--muted)]">
         {mode === "roi"
           ? "Drag on the frame to set the crop ROI."

@@ -1,8 +1,9 @@
 """Keystroke extraction for a Processing run (Keyboard ROI + time range).
 
 Uses in-tree ``cursor.keypress`` CV analysis (brightness extract + press/release
-detect) and optional key auto-detection. Writes ``keystrokes.json`` under the
-run directory. Async jobs also write ``keystroke_job.json`` for UI polling.
+detect) and optional key auto-detection. Writes ``keystrokes/keystrokes.json``
+under the run directory. Async jobs also write ``keystrokes/keystroke_job.json``
+for UI polling.
 
 Granularity: every Source frame in the Keyboard track range at the video's
 native FPS (stride=1).
@@ -308,6 +309,7 @@ def write_keystrokes_artifact(
             )
         }
     out_path = run_dir / KEYSTROKES_FILENAME
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
@@ -344,8 +346,8 @@ def job_status_path(run_dir: Path | str) -> Path:
 
 def write_job_status(run_dir: Path | str, payload: dict[str, Any]) -> Path:
     run_dir = Path(run_dir)
-    run_dir.mkdir(parents=True, exist_ok=True)
     path = job_status_path(run_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
     doc = {**payload, "updated_at": time.time()}
     path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path

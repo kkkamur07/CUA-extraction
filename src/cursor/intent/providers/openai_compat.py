@@ -87,12 +87,23 @@ class OpenAICompatChat(IntentModel):
         self.key = config.api_key()
 
     def _call(self, messages: list[dict]) -> str:
+        # OpenAI default temperature is 1.0. Low values (e.g. 0.2) over-collapse
+        # sampling; some models (gpt-5.6-luna) only accept the default.
+        temp_raw = config.get("LLM_TEMPERATURE", "1")
+        try:
+            temperature = float(temp_raw) if temp_raw not in (None, "") else 1.0
+        except ValueError:
+            temperature = 1.0
         resp = requests.post(
             f"{self.base_url}/chat/completions",
             headers={"Authorization": f"Bearer {self.key}",
                      "Content-Type": "application/json"},
-            json={"model": self.model, "messages": messages,
-                  "temperature": 0.2, "response_format": {"type": "json_object"}},
+            json={
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature,
+                "response_format": {"type": "json_object"},
+            },
             timeout=300,
         )
         if resp.status_code != 200:

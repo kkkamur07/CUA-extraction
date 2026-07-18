@@ -1,15 +1,13 @@
 import { promises as fs } from "node:fs";
+import path from "node:path";
 import { NextResponse } from "next/server";
 
-import {
-  keystrokeJobPath,
-  keystrokesPath,
-} from "@/lib/paths";
+import { keystrokeJobPath, keystrokesPath } from "@/lib/paths";
 import {
   isValidProjectId,
   requireSelection,
   runDirRelative,
-  spawnUvCursorDetached,
+  spawnCursorDetached,
 } from "@/lib/python";
 
 export const runtime = "nodejs";
@@ -22,6 +20,7 @@ type KeystrokeJobStatus = {
   n_samples?: number;
   n_events?: number;
   message?: string;
+  updated_at?: number;
   fps?: number;
   range?: {
     start_t?: number;
@@ -93,7 +92,7 @@ export async function POST(
     });
   }
 
-  // Seed status so the UI can poll immediately.
+  await fs.mkdir(path.dirname(keystrokeJobPath(id)), { recursive: true });
   await fs.writeFile(
     keystrokeJobPath(id),
     JSON.stringify(
@@ -112,7 +111,7 @@ export async function POST(
     "utf8",
   );
 
-  const { pid } = spawnUvCursorDetached([
+  const { pid } = spawnCursorDetached([
     "extract-keystrokes-async",
     runDirRelative(id),
     "--json",

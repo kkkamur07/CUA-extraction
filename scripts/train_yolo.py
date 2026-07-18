@@ -7,12 +7,18 @@ import json
 import random
 import shutil
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import cv2
 import yaml
 from ultralytics import YOLO
+
+
+def default_run_name() -> str:
+    """Timestamped Ultralytics run folder name under --project."""
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
 def canonical_label(label: str) -> str:
@@ -204,17 +210,61 @@ def split_frames(
     return set(val_frames), split_info
 
 
-def yolo_box(annotation: dict[str, Any], width: int, height: int) -> str:
-    """Convert an ROI-relative pixel box into a normalized YOLO label."""
-    x = max(0, min(int(annotation["x"]), width - 1))
-    y = max(0, min(int(annotation["y"]), height - 1))
-    right = max(x + 1, min(x + int(annotation["width"]), width))
-    bottom = max(y + 1, min(y + int(annotation["height"]), height))
+def clip_box_to_roi(
+    annotation: dict[str, Any],
+    width: int,
+    height: int,
+    *,
+    min_remain_fraction: float = 0.5,
+    min_side_px: int = 8,
+) -> tuple[int, int, int, int] | None:
+    """Clip an ROI-relative box; return None if too little of the cursor remains."""
+    orig_w = max(0, int(annotation["width"]))
+    orig_h = max(0, int(annotation["height"]))
+    if orig_w <= 0 or orig_h <= 0:
+        return None
+    x = max(0, min(int(annotation["x"]), width))
+    y = max(0, min(int(annotation["y"]), height))
+    right = max(x, min(int(annotation["x"]) + orig_w, width))
+    bottom = max(y, min(int(annotation["y"]) + orig_h, height))
     box_width = right - x
     box_height = bottom - y
+    if box_width < min_side_px or box_height < min_side_px:
+        return None
+    if (box_width * box_height) / (orig_w * orig_h) < min_remain_fraction:
+        return None
+    return x, y, box_width, box_height
+
+
+def yolo_box(annotation: dict[str, Any], width: int, height: int) -> str | None:
+    """Convert an ROI-relative pixel box into a normalized YOLO label."""
+    clipped = clip_box_to_roi(annotation, width, height)
+    if clipped is None:
+        return None
+    x, y, box_width, box_height = clipped
     center_x = (x + box_width / 2) / width
     center_y = (y + box_height / 2) / height
     return f"0 {center_x:.6f} {center_y:.6f} {box_width / width:.6f} {box_height / height:.6f}"
+
+
+def filter_annotations_to_roi(
+    annotations: dict[int, list[dict[str, Any]]],
+    roi_width: int,
+    roi_height: int,
+) -> tuple[dict[int, list[dict[str, Any]]], list[dict[str, Any]]]:
+    """Drop boxes that mostly fall outside the screen ROI."""
+    kept: dict[int, list[dict[str, Any]]] = {}
+    dropped: list[dict[str, Any]] = []
+    for frame_number, boxes in annotations.items():
+        valid: list[dict[str, Any]] = []
+        for annotation in boxes:
+            if clip_box_to_roi(annotation, roi_width, roi_height) is None:
+                dropped.append(annotation)
+            else:
+                valid.append(annotation)
+        if valid:
+            kept[frame_number] = valid
+    return kept, dropped
 
 
 def prepare_dataset(
@@ -231,7 +281,16 @@ def prepare_dataset(
     if not video_path.is_absolute():
         video_path = selection_path.parent.parent.parent / video_path
     roi = selection["roi"]
-    annotations = load_annotations(manifest_path)
+    annotations, dropped = filter_annotations_to_roi(
+        load_annotations(manifest_path),
+        roi["width"],
+        roi["height"],
+    )
+    if dropped:
+        print(
+            f"Dropped {len(dropped)} boxes mostly outside screen ROI "
+            f"(would clip to <50% area or <8px side)."
+        )
     frame_numbers = sorted(annotations)
     if len(frame_numbers) < 2:
         raise ValueError("At least two annotated frames are required.")
@@ -255,7 +314,7 @@ def prepare_dataset(
     if not video.isOpened():
         raise ValueError(f"Could not open video: {video_path}")
 
-    counts = {"train_frames": 0, "val_frames": 0, "boxes": 0}
+    counts = {"train_frames": 0, "val_frames": 0, "boxes": 0, "dropped_oob": len(dropped)}
     try:
         for frame_number in frame_numbers:
             video.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
@@ -269,14 +328,17 @@ def prepare_dataset(
             if cropped.size == 0:
                 raise ValueError(f"ROI is empty for source frame {frame_number}")
             height, width = cropped.shape[:2]
+            labels = [
+                label
+                for annotation in annotations[frame_number]
+                if (label := yolo_box(annotation, width, height)) is not None
+            ]
+            if not labels:
+                continue
             split = "val" if frame_number in val_frames else "train"
             stem = f"frame_{frame_number:08d}"
             if not cv2.imwrite(str(dataset_dir / "images" / split / f"{stem}.jpg"), cropped):
                 raise ValueError(f"Could not write dataset image for frame {frame_number}")
-            labels = [
-                yolo_box(annotation, width, height)
-                for annotation in annotations[frame_number]
-            ]
             (dataset_dir / "labels" / split / f"{stem}.txt").write_text(
                 "\n".join(labels) + "\n",
                 encoding="utf-8",
@@ -315,10 +377,12 @@ def select_best_map50_weights(run_dir: Path) -> dict[str, Any]:
     best_epoch = int(float(best_row["epoch"]))
     best_map50 = float(best_row[map_key])
 
-    # Ultralytics save_period checkpoints are epoch{N}.pt (1-indexed epoch number).
+    # results.csv epochs are 1-indexed (self.epoch + 1) while save_period
+    # checkpoints are 0-indexed (epoch{self.epoch}.pt), so csv epoch N maps to
+    # epoch{N-1}.pt. Fall back to epoch{N}.pt only if the exact file is gone.
     candidates = [
-        weights_dir / f"epoch{best_epoch}.pt",
         weights_dir / f"epoch{best_epoch - 1}.pt",
+        weights_dir / f"epoch{best_epoch}.pt",
     ]
     chosen = next((path for path in candidates if path.is_file()), None)
     fitness_best = weights_dir / "best.pt"
@@ -405,24 +469,54 @@ def main() -> None:
     parser.add_argument(
         "--name",
         type=str,
-        default="cursor",
-        help="Ultralytics run name under --project (use a new name to keep older checkpoints).",
+        default=None,
+        help="Ultralytics run name under --project (default: local timestamp YYYYMMDD-HHMMSS).",
     )
     parser.add_argument(
         "--weights",
         type=Path,
-        default=Path("artifacts/models/yolo11n.pt"),
+        default=Path("artifacts/models/yolo11s.pt"),
         help="Starting weights (.pt). Pass a prior best.pt to fine-tune.",
     )
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument(
         "--patience",
         type=int,
-        default=25,
+        default=0,
         help="Early-stopping patience (0 = train all epochs, then pick best mAP50).",
     )
     parser.add_argument("--imgsz", type=int, default=1024)
     parser.add_argument("--batch", type=int, default=16)
+    parser.add_argument(
+        "--amp",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable CUDA AMP (default: off; more stable on small cursor datasets).",
+    )
+    parser.add_argument(
+        "--mosaic",
+        type=float,
+        default=0.3,
+        help="Mosaic augmentation probability (0 disables; safer for tiny datasets).",
+    )
+    parser.add_argument(
+        "--lr0",
+        type=float,
+        default=None,
+        help="Initial LR. Default: Ultralytics optimizer=auto.",
+    )
+    parser.add_argument(
+        "--hyp",
+        type=Path,
+        default=None,
+        help="YAML of Ultralytics train hypers (e.g. best_hyperparameters.yaml from tune).",
+    )
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        default="auto",
+        help="Optimizer (auto, AdamW, SGD, …).",
+    )
     parser.add_argument("--val-fraction", type=float, default=0.2)
     parser.add_argument(
         "--group-gap-frames",
@@ -458,44 +552,59 @@ def main() -> None:
 
     device = select_device(args.device)
     weights = str(args.weights)
+    run_name = args.name or default_run_name()
     print(f"Training on {device} from {weights}")
     model = YOLO(weights)
     project_dir = args.project.resolve()
-    run_dir = project_dir / args.name
+    project_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = project_dir / run_name
     if run_dir.exists():
-        archive = project_dir / f"{args.name}-archive-{run_dir.stat().st_mtime_ns}"
-        print(f"Keeping earlier run at {archive}")
-        shutil.move(str(run_dir), str(archive))
-    model.train(
-        data=str(data_path),
-        epochs=args.epochs,
-        imgsz=args.imgsz,
-        batch=args.batch,
-        device=device,
-        workers=0,
-        project=str(project_dir),
-        name=args.name,
-        exist_ok=True,
-        patience=args.patience,
-        save_period=1,
-        seed=args.seed,
-        plots=True,
-        hsv_h=0.0,
-        hsv_s=0.2,
-        hsv_v=0.2,
-        degrees=0.0,
-        translate=0.05,
-        scale=0.15,
-        shear=0.0,
-        perspective=0.0,
-        flipud=0.0,
-        fliplr=0.0,
-        mosaic=0.3,
-        mixup=0.0,
-        copy_paste=0.0,
-        erasing=0.1,
-        close_mosaic=10,
-    )
+        # Timestamp collision (same second): keep the old run and bump the name.
+        run_name = f"{run_name}-{datetime.now().strftime('%f')}"
+        run_dir = project_dir / run_name
+    print(f"Run directory: {run_dir}")
+    train_kwargs: dict[str, Any] = {
+        "data": str(data_path),
+        "epochs": args.epochs,
+        "imgsz": args.imgsz,
+        "batch": args.batch,
+        "device": device,
+        "workers": 0,
+        "project": str(project_dir),
+        "name": run_name,
+        "exist_ok": True,
+        "patience": args.patience,
+        "save_period": 1,
+        "seed": args.seed,
+        "plots": True,
+        "amp": args.amp,
+        "optimizer": args.optimizer,
+        "hsv_h": 0.0,
+        "hsv_s": 0.2,
+        "hsv_v": 0.2,
+        "degrees": 0.0,
+        "translate": 0.05,
+        "scale": 0.15,
+        "shear": 0.0,
+        "perspective": 0.0,
+        "flipud": 0.0,
+        "fliplr": 0.0,
+        "mosaic": args.mosaic,
+        "mixup": 0.0,
+        "copy_paste": 0.0,
+        "erasing": 0.1 if args.mosaic > 0 else 0.0,
+        "close_mosaic": 10 if args.mosaic > 0 else 0,
+    }
+    if args.hyp is not None:
+        hyp = yaml.safe_load(args.hyp.read_text(encoding="utf-8")) or {}
+        if not isinstance(hyp, dict):
+            raise ValueError(f"--hyp must be a YAML mapping: {args.hyp}")
+        # Drop Ultralytics comment-only / non-train keys if present.
+        train_kwargs.update({k: v for k, v in hyp.items() if not str(k).startswith("#")})
+        print(f"Loaded hypers from {args.hyp}")
+    if args.lr0 is not None:
+        train_kwargs["lr0"] = args.lr0
+    model.train(**train_kwargs)
 
     selection = select_best_map50_weights(run_dir)
     print(
@@ -547,6 +656,8 @@ def main() -> None:
 
     summary = {
         "device": device,
+        "run_name": run_name,
+        "run_dir": str(run_dir),
         "weights": weights,
         "data": str(data_path),
         "counts": counts,
@@ -556,7 +667,7 @@ def main() -> None:
             "hsv_v": 0.2,
             "translate": 0.05,
             "scale": 0.15,
-            "mosaic": 0.3,
+            "mosaic": args.mosaic,
             "erasing": 0.1,
             "flips": False,
         },

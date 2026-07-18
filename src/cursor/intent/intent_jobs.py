@@ -1,4 +1,4 @@
-"""Async intent job with ``intent_job.json`` progress for UI polling."""
+"""Async intent job with ``intent/intent_job.json`` progress for UI polling."""
 
 from __future__ import annotations
 
@@ -34,8 +34,8 @@ def job_status_path(run_dir: Path | str) -> Path:
 
 def write_job_status(run_dir: Path | str, payload: dict[str, Any]) -> Path:
     run_dir = Path(run_dir)
-    run_dir.mkdir(parents=True, exist_ok=True)
     path = job_status_path(run_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
     doc = {**payload, "updated_at": time.time()}
     path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
@@ -87,11 +87,15 @@ def run_intent_job(
         selection = load_project_selection(run_dir)
         video_path = resolve_video_path(selection.video)
         duration = video_duration_s(video_path)
+        start_t = float(selection.screen.start)
+        end_t = float(selection.screen.end)
         job = audio_intent.AudioJob(
             video_path=str(video_path),
             duration=duration,
             chunk_s=int(chunk_s),
             language=language,
+            start_t=start_t,
+            end_t=end_t,
         )
 
         write_job_status(
@@ -100,10 +104,12 @@ def run_intent_job(
                 "state": "running",
                 "progress": 0.0,
                 "error": None,
-                "message": "Starting ASR…",
+                "message": f"Starting ASR ({start_t:.1f}s–{end_t:.1f}s)…",
                 "n_segments": 0,
                 "n_intents": 0,
                 "duration_s": duration,
+                "start_t": start_t,
+                "end_t": end_t,
             },
         )
 
@@ -146,8 +152,8 @@ def run_intent_job(
         paths = write_intent_artifacts(
             run_dir,
             job,
-            start_t=float(selection.screen.start),
-            end_t=float(selection.screen.end),
+            start_t=start_t,
+            end_t=end_t,
         )
         result = {
             "state": "done",

@@ -42,6 +42,7 @@ export function ScreenTab({
         roi={screen.roi}
         onRoiChange={(roi) => onRoiChange(roi)}
         currentTime={currentTime}
+        fps={fps}
         onTimeUpdate={onTimeUpdate}
         onMeta={onMeta}
       />
@@ -56,9 +57,9 @@ export function ScreenTab({
           <input
             type="range"
             min={0}
-            max={duration || 1}
+            max={Math.max(duration, currentTime, 1)}
             step={0.1}
-            value={Math.min(currentTime, duration || 0)}
+            value={currentTime}
             onChange={(event) => {
               const value = Number(event.target.value);
               onTimeUpdate(value);
