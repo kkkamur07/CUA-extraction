@@ -1,0 +1,38 @@
+{
+  "id": "solidworks-tut",
+  "video": "video/solidworks-tut.mp4",
+  "fps": 30,
+  "frame_width": 1920,
+  "frame_height": 1080,
+  "preview_timestamp": 737.5,
+  "roi": {
+    "x": 369,
+    "y": 19,
+    "width": 1524,
+    "height": 777
+  },
+  "start": 220,
+  "end": 1050,
+  "screen": {
+    "roi": {
+      "x": 369,
+      "y": 19,
+      "width": 1524,
+      "height": 777
+    },
+    "start": 220,
+    "end": 1050,
+    "preview_timestamp": 737.5
+  },
+  "keyboard": {
+    "roi": {
+      "x": 22,
+      "y": 796,
+      "width": 701,
+      "height": 270
+    },
+    "start": 220,
+    "end": 1050,
+    "preview_timestamp": 737.5
+  }
+}

@@ -1,0 +1,45 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Secrets
+.env
+.env.local
+
+# Virtual environments
+.venv
+
+# Source videos stay local (selection.json records the path)
+video/*
+!video/.gitkeep
+
+# Local inspection and processing output
+.inspection/
+runs/
+
+# Artifacts (regenerable outputs; allow published cursor baseline weights)
+artifacts/*
+!artifacts/models/
+artifacts/models/*
+!artifacts/models/cursor/
+artifacts/models/cursor/*
+!artifacts/models/cursor/weights/
+artifacts/models/cursor/weights/*
+!artifacts/models/cursor/weights/best.pt
+
+# Regenerable YOLO export (not training source of truth)
+data/**/yolo-dataset/
+data/**/yolo-data-quality.json
+
+# Model weights (*.pt) except published cursor baseline
+*.pt
+!artifacts/models/cursor/weights/best.pt
+
+# Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
