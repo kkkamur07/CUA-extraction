@@ -9,17 +9,9 @@ published as one **Workflow sample** per **Processing run**.
 ```bash
 git clone https://github.com/kkkamur07/CUA-extraction.git
 cd CUA-extraction
-
-# Python (3.11+)
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-
-# API key for ASR + intent (OpenAI-compatible)
-cp .env.example .env
-# edit .env and set OPENAI_API_KEY=...
-
-# Frontend
+git lfs install && git lfs pull
+python3 -m venv .venv && source .venv/bin/activate && pip install -e .
+cp .env.example .env   # set OPENAI_API_KEY
 cd frontend && npm install && npm run dev
 ```
 
@@ -30,16 +22,9 @@ Open [http://localhost:3000](http://localhost:3000).
 3. Run **cursor**, **keyboard**, and **intent** extraction from their tabs.
 4. Click **Generate final events + video** to publish under `data/<id>/`.
 
-Cursor detection needs weights at
-`artifacts/models/cursor/weights/best.pt` (tracked via Git LFS). After clone:
-
-```bash
-git lfs install
-git lfs pull
-```
-
-If LFS is unavailable, train your own detector (see below) or place a
-`best.pt` at that path.
+Cursor detection uses weights at `artifacts/models/cursor/weights/best.pt`
+(pulled via Git LFS above). If LFS is unavailable, train your own detector
+(see below) or place a `best.pt` at that path.
 
 ## Run the labeling UI
 
