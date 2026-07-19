@@ -2,7 +2,13 @@
 
 import { useCallback, useState } from "react";
 
-import type { CropROI, CursorRawEvent, TrackSelection } from "@/lib/types";
+import type {
+  CropROI,
+  CursorFilterCriteria,
+  CursorRawEvent,
+  TrackSelection,
+} from "@/lib/types";
+import { DEFAULT_CURSOR_FILTER } from "@/lib/types";
 
 import type { CursorWeightsStatus } from "./types";
 
@@ -22,6 +28,10 @@ export function useCursorExtraction(projectId: string) {
   const [annotationCount, setAnnotationCount] = useState(0);
   const [labelCounts, setLabelCounts] = useState<Record<string, number>>({});
   const [weights, setWeights] = useState<CursorWeightsStatus | null>(null);
+  const [filter, setFilter] = useState<CursorFilterCriteria>({
+    ...DEFAULT_CURSOR_FILTER,
+  });
+  const [hasRaw, setHasRaw] = useState(false);
 
   const loadCursor = useCallback(async () => {
     const res = await fetch(`/api/projects/${projectId}/extract/cursor`);
@@ -29,6 +39,13 @@ export function useCursorExtraction(projectId: string) {
     if (json.weights && typeof json.weights === "object") {
       setWeights(json.weights as CursorWeightsStatus);
     }
+    if (json.filter && typeof json.filter === "object") {
+      setFilter({
+        min_confidence: Number(json.filter.min_confidence),
+        min_move_px: Number(json.filter.min_move_px),
+      });
+    }
+    setHasRaw(Boolean(json.has_raw));
     setCursorEvents(Array.isArray(json.events) ? (json.events as CursorRawEvent[]) : []);
   }, [projectId]);
 
@@ -45,7 +62,12 @@ export function useCursorExtraction(projectId: string) {
   }, [projectId]);
 
   const runCursorExtraction = async (
-    opts: { selectionSaved: boolean; selectionDirty: boolean },
+    opts: {
+      selectionSaved: boolean;
+      selectionDirty: boolean;
+      filterOnly?: boolean;
+      filter?: CursorFilterCriteria;
+    },
     onStatus: (msg: string) => void,
     onError: (msg: string) => void,
   ) => {
@@ -57,18 +79,36 @@ export function useCursorExtraction(projectId: string) {
       onError("Save selection changes before running cursor extraction.");
       return;
     }
+    const nextFilter = opts.filter ?? filter;
     setCursorRunning(true);
     onError("");
-    onStatus("Running YOLO cursor extraction…");
+    onStatus(
+      opts.filterOnly
+        ? "Re-filtering cursor track…"
+        : "Running YOLO cursor extraction…",
+    );
     try {
       const res = await fetch(`/api/projects/${projectId}/extract/cursor`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filter_only: Boolean(opts.filterOnly),
+          min_confidence: nextFilter.min_confidence,
+          min_move_px: nextFilter.min_move_px,
+        }),
       });
       const json = await res.json();
       if (json.weights && typeof json.weights === "object") {
         setWeights(json.weights as CursorWeightsStatus);
       }
+      if (json.filter && typeof json.filter === "object") {
+        setFilter({
+          min_confidence: Number(json.filter.min_confidence),
+          min_move_px: Number(json.filter.min_move_px),
+        });
+      }
       if (!res.ok || !json.ok) throw new Error(json.error || "Cursor extraction failed");
+      setHasRaw(true);
       setCursorEvents(Array.isArray(json.events) ? (json.events as CursorRawEvent[]) : []);
       onStatus(json.message || `Wrote ${json.events?.length ?? 0} cursor events`);
     } catch (err) {
@@ -132,6 +172,9 @@ export function useCursorExtraction(projectId: string) {
     annotationCount,
     labelCounts,
     weights,
+    filter,
+    setFilter,
+    hasRaw,
     loadCursor,
     loadAnnotationCounts,
     runCursorExtraction,

@@ -68,7 +68,9 @@ export function useIntentExtraction(projectId: string) {
     return json;
   }, [projectId, startPoll, stopPoll]);
 
-  loadRef.current = loadIntent;
+  useEffect(() => {
+    loadRef.current = loadIntent;
+  }, [loadIntent]);
 
   useEffect(() => () => stopPoll(), [stopPoll]);
 

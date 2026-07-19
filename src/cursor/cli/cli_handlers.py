@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 
 def run_stub_workflow(args: argparse.Namespace) -> None:
@@ -72,7 +73,16 @@ def run_extract_keystrokes_async(args: argparse.Namespace) -> None:
 def run_extract_cursor(args: argparse.Namespace) -> None:
     from ..detector.cursor_events import extract_cursor_events
 
-    out_path = extract_cursor_events(args.run_dir, model_path=args.model)
+    events_path = getattr(args, "output", None)
+    if events_path:
+        events_path = Path(events_path)
+        if not events_path.is_absolute():
+            events_path = Path.cwd() / events_path
+    out_path = extract_cursor_events(
+        args.run_dir,
+        model_path=args.model,
+        events_path=events_path,
+    )
     print(f"Wrote Cursor observations to {out_path}")
 
 

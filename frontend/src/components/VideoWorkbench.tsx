@@ -33,6 +33,7 @@ export function VideoWorkbench({ id, videoName }: Props) {
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [eventsProcessing, setEventsProcessing] = useState(false);
 
   const selection = useSelectionState(id, videoName);
   const kb = useKeystrokeExtraction(id);
@@ -41,8 +42,51 @@ export function VideoWorkbench({ id, videoName }: Props) {
 
   const activeRoiTrack = tab === "keyboard" ? selection.keyboard : selection.screen;
   const runDisabled = !selection.selectionSaved || selection.selectionDirty;
+  const extractionDisabled = runDisabled || eventsProcessing;
   const setErr = useCallback((msg: string) => setError(msg), []);
   const setOk = useCallback((msg: string) => setStatus(msg), []);
+  const runEventProcessing = async () => {
+    if (!selection.selectionSaved) {
+      setError("Save selection first.");
+      return;
+    }
+    if (selection.selectionDirty) {
+      setError("Save selection changes before processing events.");
+      return;
+    }
+    setEventsProcessing(true);
+    setError("");
+    setStatus("Finalizing existing extraction artifacts…");
+    try {
+      const res = await fetch(`/api/projects/${id}/process-events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          min_confidence: cursor.filter.min_confidence,
+          min_move_px: cursor.filter.min_move_px,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Event processing failed");
+      }
+      await Promise.all([
+        cursor.loadCursor(),
+        kb.loadKeystrokes(),
+        intent.loadIntent(),
+      ]);
+      const counts = json.summary?.counts;
+      setStatus(
+        `Final output ready · ${counts?.filtered_cursor ?? 0} cursor · ` +
+          `${counts?.filtered_keyboard ?? 0} keyboard · ` +
+          `${counts?.mouse_buttons ?? 0} mouse · ${json.video ?? "video written"}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Event processing failed");
+    } finally {
+      setEventsProcessing(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -134,9 +178,28 @@ export function VideoWorkbench({ id, videoName }: Props) {
           <h1 className="font-[family-name:var(--font-display)] text-3xl tracking-tight">{id}</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">{videoName}</p>
         </div>
-        <Link href="/" className="text-sm text-[var(--accent)] underline-offset-4 hover:underline">
-          All videos
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            disabled={
+              eventsProcessing ||
+              cursor.cursorRunning ||
+              kb.kbRunning ||
+              intent.intentRunning ||
+              !selection.selectionSaved ||
+              selection.selectionDirty
+            }
+            onClick={runEventProcessing}
+            className="rounded bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {eventsProcessing
+              ? "Generating final events…"
+              : "Generate final events + video"}
+          </button>
+          <Link href="/" className="text-sm text-[var(--accent)] underline-offset-4 hover:underline">
+            All videos
+          </Link>
+        </div>
       </header>
 
       <nav className="flex flex-wrap gap-2 border-b border-[var(--line)] pb-3">
@@ -180,7 +243,7 @@ export function VideoWorkbench({ id, videoName }: Props) {
         ))}
       </nav>
 
-      {tab === "screen" && selection.screen && (
+      {tab === "screen" && selection.screen && selection.cornerMasks && (
         <ScreenTab
           videoSrc={videoSrc}
           screen={selection.screen}
@@ -202,6 +265,11 @@ export function VideoWorkbench({ id, videoName }: Props) {
             selection.setFps(value);
             if (selection.selectionSaved) selection.setSelectionDirty(true);
           }}
+          cornerMasks={selection.cornerMasks}
+          onCornerMasksChange={(cornerMasks) => {
+            selection.setCornerMasks(cornerMasks);
+            if (selection.selectionSaved) selection.setSelectionDirty(true);
+          }}
           onSave={() =>
             selection.saveSelection(
               { syncRangeFromScreen: true, tab },
@@ -220,7 +288,7 @@ export function VideoWorkbench({ id, videoName }: Props) {
           currentTime={selection.currentTime}
           fps={selection.fps}
           saving={selection.saving}
-          runDisabled={runDisabled}
+          runDisabled={extractionDisabled}
           kbRunning={kb.kbRunning}
           kbJob={kb.kbJob}
           keystrokes={kb.keystrokes}
@@ -260,7 +328,7 @@ export function VideoWorkbench({ id, videoName }: Props) {
 
       {tab === "intent" && (
         <IntentTab
-          runDisabled={runDisabled}
+          runDisabled={extractionDisabled}
           running={intent.intentRunning}
           job={intent.intentJob}
           summary={intent.intentSummary}
@@ -294,10 +362,12 @@ export function VideoWorkbench({ id, videoName }: Props) {
           autoAdvance={autoAdvance}
           annotationCount={cursor.annotationCount}
           labelCounts={cursor.labelCounts}
-          runDisabled={runDisabled}
+          runDisabled={extractionDisabled}
           cursorRunning={cursor.cursorRunning}
           cursorEvents={cursor.cursorEvents}
           weights={cursor.weights}
+          filter={cursor.filter}
+          hasRaw={cursor.hasRaw}
           onModeChange={setCursorMode}
           onTimeUpdate={selection.setCurrentTime}
           onMeta={selection.onMeta}
@@ -324,11 +394,25 @@ export function VideoWorkbench({ id, videoName }: Props) {
           onAutoAdvanceChange={setAutoAdvance}
           onStepFramesChange={setStepFrames}
           onStep={step}
+          onFilterChange={cursor.setFilter}
           onRunExtract={() =>
             cursor.runCursorExtraction(
               {
                 selectionSaved: selection.selectionSaved,
                 selectionDirty: selection.selectionDirty,
+                filter: cursor.filter,
+              },
+              setOk,
+              setErr,
+            )
+          }
+          onRefilter={() =>
+            cursor.runCursorExtraction(
+              {
+                selectionSaved: selection.selectionSaved,
+                selectionDirty: selection.selectionDirty,
+                filterOnly: true,
+                filter: cursor.filter,
               },
               setOk,
               setErr,

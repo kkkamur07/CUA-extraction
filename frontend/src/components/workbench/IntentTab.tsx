@@ -54,8 +54,9 @@ export function IntentTab({
             Intent extraction
           </p>
           <p className="mt-1 text-sm text-[var(--ink)]">
-            Uses the OpenAI API (Whisper ASR + chat) for full/trimmed speech,
-            then summary + Action–Intent pairs. Does not run keyboard or cursor.
+            Run speech transcription and Action–Intent extraction here. The
+            final button combines these saved intent files with keyboard and
+            cursor events.
           </p>
           {providers && (
             <div className="mt-3 flex flex-wrap gap-2">

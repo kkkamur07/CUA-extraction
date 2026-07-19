@@ -74,6 +74,7 @@ def extract_cursor_events(
     full_video: bool = False,
     debug_video_path: Path | str | None = None,
     detections_path: Path | str | None = None,
+    events_path: Path | str | None = None,
 ) -> Path:
     """Run YOLO over the selection Crop ROI + time range; write cursor_events.jsonl.
 
@@ -92,7 +93,13 @@ def extract_cursor_events(
     weights = _resolve_model_path(model_path, run_dir)
 
     roi, start_s, end_s = _crop_roi_and_range(selection)
-    out_path = run_dir / CURSOR_EVENTS_FILENAME
+    out_path = (
+        Path(events_path)
+        if events_path is not None
+        else run_dir / CURSOR_EVENTS_FILENAME
+    )
+    if not out_path.is_absolute():
+        out_path = (Path.cwd() / out_path).resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     video = cv2.VideoCapture(str(video_path))

@@ -124,6 +124,12 @@ def main(argv: list[str] | None = None) -> None:
         )
         _add_run_dir(parser, "Processing run directory with selection.json")
         parser.add_argument("--model", type=str, default=_DEFAULT_CURSOR_MODEL)
+        parser.add_argument(
+            "--output",
+            type=str,
+            default=None,
+            help="Raw cursor JSONL output path (default: cursor/cursor_events.jsonl)",
+        )
         run_extract_cursor(parser.parse_args(argv[1:]))
         return
 

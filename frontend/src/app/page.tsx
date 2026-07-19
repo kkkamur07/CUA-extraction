@@ -2,7 +2,12 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import Link from "next/link";
 
-import { VIDEO_DIR, selectionPath, slugFromVideoName } from "@/lib/paths";
+import {
+  VIDEO_DIR,
+  finalVideoPath,
+  selectionPath,
+  slugFromVideoName,
+} from "@/lib/paths";
 import type { VideoInfo } from "@/lib/types";
 import { RefreshButton } from "@/components/RefreshButton";
 
@@ -11,6 +16,15 @@ export const dynamic = "force-dynamic";
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function listVideos(): Promise<VideoInfo[]> {
@@ -23,19 +37,17 @@ async function listVideos(): Promise<VideoInfo[]> {
     const stat = await fs.stat(filePath);
     if (!stat.isFile()) continue;
     const id = slugFromVideoName(name);
-    let hasSelection = false;
-    try {
-      await fs.access(selectionPath(id));
-      hasSelection = true;
-    } catch {
-      hasSelection = false;
-    }
+    const [hasSelection, hasFinalOutput] = await Promise.all([
+      pathExists(selectionPath(id)),
+      pathExists(finalVideoPath(id)),
+    ]);
     videos.push({
       name,
       id,
       path: `video/${name}`,
       sizeBytes: stat.size,
       hasSelection,
+      hasFinalOutput,
     });
   }
   return videos;
@@ -72,11 +84,19 @@ export default async function HomePage() {
               href={`/projects/${encodeURIComponent(video.id)}?file=${encodeURIComponent(video.name)}`}
               className="flex items-center justify-between gap-4 py-4 transition-colors hover:bg-[var(--wash)]"
             >
-              <div>
-                <p className="font-medium">{video.name}</p>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium">{video.name}</p>
+                  {video.hasFinalOutput && (
+                    <span className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-emerald-900">
+                      Generated
+                    </span>
+                  )}
+                </div>
                 <p className="mt-1 text-sm text-[var(--muted)]">
                   {formatBytes(video.sizeBytes)}
                   {video.hasSelection ? " · selection saved" : " · no selection yet"}
+                  {video.hasFinalOutput ? " · final output ready" : ""}
                 </p>
               </div>
               <span className="text-sm text-[var(--accent)]">Open →</span>

@@ -14,40 +14,129 @@ export function dataProjectDir(id: string): string {
   return path.join(DATA_DIR, id);
 }
 
+/** Published final dataset directory; traces and jobs stay under runs/<id>. */
+export function publishedProjectDir(id: string): string {
+  return dataProjectDir(id);
+}
+
+export function publishedSelectionPath(id: string): string {
+  return path.join(publishedProjectDir(id), "selection.json");
+}
+
 export function selectionPath(id: string): string {
   return path.join(projectDir(id), "selection.json");
 }
 
 export function keystrokesPath(id: string): string {
-  return path.join(projectDir(id), "keystrokes", "keystrokes.json");
+  return path.join(projectDir(id), "trace", "keystrokes", "keystrokes.json");
+}
+
+export function finalKeystrokesPath(id: string): string {
+  return path.join(publishedProjectDir(id), "keystrokes", "final_keystrokes.json");
+}
+
+export function rawKeystrokesPath(id: string): string {
+  return path.join(projectDir(id), "keystrokes", "raw_keystrokes.json");
+}
+
+export function publishedRawKeystrokesPath(id: string): string {
+  return path.join(publishedProjectDir(id), "keystrokes", "raw_keystrokes.json");
 }
 
 export function keystrokeJobPath(id: string): string {
-  return path.join(projectDir(id), "keystrokes", "keystroke_job.json");
+  return path.join(projectDir(id), "trace", "keystrokes", "keystroke_job.json");
 }
 
 export function cursorEventsPath(id: string): string {
-  return path.join(projectDir(id), "cursor", "cursor_events.jsonl");
+  return path.join(projectDir(id), "trace", "cursor", "cursor_events.jsonl");
+}
+
+export function finalCursorEventsPath(id: string): string {
+  return path.join(publishedProjectDir(id), "cursor", "final_cursor_events.jsonl");
+}
+
+export function rawCursorEventsPath(id: string): string {
+  return path.join(projectDir(id), "cursor", "raw_cursor_events.jsonl");
+}
+
+export function publishedRawCursorEventsPath(id: string): string {
+  return path.join(publishedProjectDir(id), "cursor", "raw_cursor_events.jsonl");
+}
+
+export function cursorFilterSummaryPath(id: string): string {
+  return path.join(projectDir(id), "trace", "cursor", "filter_summary.json");
+}
+
+export function cursorFilterConfigPath(id: string): string {
+  return path.join(projectDir(id), "trace", "cursor", "filter_config.json");
+}
+
+export function mouseEventsPath(id: string): string {
+  return path.join(projectDir(id), "trace", "cursor", "mouse_events.jsonl");
+}
+
+export function finalMouseEventsPath(id: string): string {
+  return path.join(publishedProjectDir(id), "cursor", "final_mouse_events.jsonl");
+}
+
+export function finalProcessingSummaryPath(id: string): string {
+  return path.join(publishedProjectDir(id), "trace", "final_processing_summary.json");
 }
 
 export function speechFullPath(id: string): string {
-  return path.join(projectDir(id), "intent", "speech_full.json");
+  return path.join(projectDir(id), "trace", "intent", "speech_full.json");
+}
+
+export function finalSpeechFullPath(id: string): string {
+  return path.join(publishedProjectDir(id), "intent", "final_speech_full.json");
 }
 
 export function speechTrimmedPath(id: string): string {
-  return path.join(projectDir(id), "intent", "speech_trimmed.json");
+  return path.join(projectDir(id), "trace", "intent", "speech_trimmed.json");
+}
+
+export function finalSpeechTrimmedPath(id: string): string {
+  return path.join(publishedProjectDir(id), "intent", "final_speech_trimmed.json");
 }
 
 export function intentJobPath(id: string): string {
-  return path.join(projectDir(id), "intent", "intent_job.json");
+  return path.join(projectDir(id), "trace", "intent", "intent_job.json");
 }
 
 export function summaryPath(id: string): string {
-  return path.join(projectDir(id), "summary", "summary.json");
+  return path.join(projectDir(id), "trace", "summary", "summary.json");
+}
+
+export function finalSummaryPath(id: string): string {
+  return path.join(publishedProjectDir(id), "summary", "final_summary.json");
 }
 
 export function actionIntentPairsPath(id: string): string {
-  return path.join(projectDir(id), "intent", "action_intent_pairs.json");
+  return path.join(projectDir(id), "trace", "intent", "action_intent_pairs.json");
+}
+
+export function finalActionIntentPairsPath(id: string): string {
+  return path.join(publishedProjectDir(id), "intent", "final_action_intent_pairs.json");
+}
+
+export function workflowSamplePath(id: string): string {
+  return path.join(projectDir(id), "trace", "workflow_sample.json");
+}
+
+export function finalWorkflowSamplePath(id: string): string {
+  return path.join(publishedProjectDir(id), "final_workflow_sample.json");
+}
+
+export function finalVideoPath(id: string): string {
+  return path.join(publishedProjectDir(id), "final_video.mp4");
+}
+
+export function finalVideoManifestPath(id: string): string {
+  return path.join(publishedProjectDir(id), "final_video.json");
+}
+
+export function metadataPath(id: string): string {
+  return path.join(publishedProjectDir(id), "metadata.json");
 }
 
 /** Cursor annotation patches + manifest used for YOLO training. */

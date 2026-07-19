@@ -25,6 +25,8 @@ from ..workflow.models import KeystrokeRawEvent, ProjectSelection
 from ..workflow.workflow import (
     KEYSTROKE_JOB_FILENAME,
     KEYSTROKES_FILENAME,
+    MOUSE_EVENTS_FILENAME,
+    RAW_KEYSTROKES_FILENAME,
     load_project_selection,
 )
 
@@ -32,6 +34,11 @@ DEFAULT_LAYOUT_NAME = "tootalltoby.json"
 _DEFAULT_LAYOUT_NAME = DEFAULT_LAYOUT_NAME  # back-compat
 DEFAULT_STRIDE = 1
 POLL_INTERVAL_S = 0.25
+MOUSE_BUTTON_MAPPING = {"M1": "right", "M2": "left"}
+
+
+def _is_mouse_overlay_event(event: dict[str, Any]) -> bool:
+    return str(event.get("key", "")).upper() in MOUSE_BUTTON_MAPPING
 
 
 def _repo_root() -> Path:
@@ -291,9 +298,9 @@ def write_keystrokes_artifact(
 ) -> Path:
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
-    payload: dict[str, Any] = {"events": events}
+    raw_payload: dict[str, Any] = {"events": events}
     if meta:
-        payload["meta"] = {
+        raw_payload["meta"] = {
             k: v
             for k, v in meta.items()
             if k
@@ -308,10 +315,53 @@ def write_keystrokes_artifact(
                 "layout",
             )
         }
+    raw_path = run_dir / RAW_KEYSTROKES_FILENAME
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_path.write_text(
+        json.dumps(raw_payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    keyboard_events = [
+        event for event in events if not _is_mouse_overlay_event(event)
+    ]
+    payload = {**raw_payload, "events": keyboard_events}
     out_path = run_dir / KEYSTROKES_FILENAME
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return out_path
+
+
+def write_mouse_events_artifact(
+    run_dir: Path | str,
+    events: list[dict[str, Any]],
+) -> Path:
+    """Write M1/M2 overlay detections as normalized mouse-button events."""
+    run_dir = Path(run_dir)
+    mouse_events: list[dict[str, Any]] = []
+    for item in events:
+        source_key = str(item.get("key", "")).upper()
+        button = MOUSE_BUTTON_MAPPING.get(source_key)
+        if button is None:
+            continue
+        mouse_events.append(
+            {
+                "type": "mouse_button",
+                "button": button,
+                "press_t": float(item["press_t"]),
+                "release_t": float(item["release_t"]),
+                "source_key": source_key,
+                "clipped": bool(item.get("clipped", False)),
+            }
+        )
+    mouse_events.sort(key=lambda item: (item["press_t"], item["button"]))
+    out_path = run_dir / MOUSE_EVENTS_FILENAME
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in mouse_events),
         encoding="utf-8",
     )
     return out_path
@@ -334,7 +384,9 @@ def extract_keystrokes(
         layout_name=layout_name,
         detect_params=detect_params,
     )
-    return write_keystrokes_artifact(run_dir, events, meta=meta)
+    out_path = write_keystrokes_artifact(run_dir, events, meta=meta)
+    write_mouse_events_artifact(run_dir, events)
+    return out_path
 
 
 # --- Async job (UI polling via keystroke_job.json) ---
@@ -551,18 +603,24 @@ def run_keystroke_job(
             "keypress_package": str(LAYOUTS_DIR.parent),
         }
         out_path = write_keystrokes_artifact(run_dir, raw_events, meta=meta)
+        mouse_path = write_mouse_events_artifact(run_dir, raw_events)
+        keyboard_event_count = sum(
+            not _is_mouse_overlay_event(event) for event in raw_events
+        )
 
         result = {
             "state": "done",
             "progress": 1.0,
             "error": None,
             "n_samples": n_samples,
-            "n_events": len(raw_events),
-            "message": f"Done — {len(raw_events)} keystrokes",
+            "n_events": keyboard_event_count,
+            "mouse_events": len(raw_events) - keyboard_event_count,
+            "message": f"Done — {keyboard_event_count} keyboard events",
             "fps": video_fps,
             "n_keys": len(key_boxes),
             "frames_to_process": frames_to_process,
             "path": str(out_path),
+            "mouse_path": str(mouse_path),
             "range": meta["range"],
             "stats": stats,
         }

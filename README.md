@@ -4,6 +4,43 @@ This project extracts aligned multimodal tutorial evidence from screen-recorded
 videos: **Cursor observations**, **Keystrokes**, and narrated **Action–Intent pairs**,
 published as one **Workflow sample** per **Processing run**.
 
+## Quick start
+
+```bash
+git clone https://github.com/kkkamur07/CUA-extraction.git
+cd CUA-extraction
+
+# Python (3.11+)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+# API key for ASR + intent (OpenAI-compatible)
+cp .env.example .env
+# edit .env and set OPENAI_API_KEY=...
+
+# Frontend
+cd frontend && npm install && npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+1. Put tutorial MP4s in `video/` (local only; not committed).
+2. In the workbench: set **screen** + **keyboard** crops/ranges, save selection.
+3. Run **cursor**, **keyboard**, and **intent** extraction from their tabs.
+4. Click **Generate final events + video** to publish under `data/<id>/`.
+
+Cursor detection needs weights at
+`artifacts/models/cursor/weights/best.pt` (tracked via Git LFS). After clone:
+
+```bash
+git lfs install
+git lfs pull
+```
+
+If LFS is unavailable, train your own detector (see below) or place a
+`best.pt` at that path.
+
 ## Run the labeling UI
 
 Put tutorial MP4s in `video/` (5–6 is fine). Then start the Next.js workbench:
@@ -30,22 +67,37 @@ scripts keep working:
 .venv/bin/python scripts/predict_yolo_video.py --selection runs/<video-id>/selection.json
 ```
 
-## Processing run directory contract
+## Processing run and published-data contract
 
-Each **Processing run** lives under `runs/<id>/`:
+Intermediate processing artifacts live under `runs/<id>`. The final published
+dataset is written under `data/<id>`:
 
 | Path | Role |
 |------|------|
 | `selection.json` | Project selection: Crop ROI, Keyboard ROI, time range, fps, video path |
-| `keystrokes/keystrokes.json` | Keystroke Raw events from the keyboard detector |
-| `keystrokes/keystroke_job.json` | Async keystroke job progress (UI polling) |
-| `cursor/cursor_events.jsonl` | Cursor observation Raw events (one JSON object per line) |
-| `intent/speech_full.json` | Full-video ASR (feeds the Workflow summary) |
-| `intent/speech_trimmed.json` | Trimmed-range ASR (feeds Action–Intent pairs) |
-| `intent/action_intent_pairs.json` | Ordered Action–Intent pairs (intermediate) |
-| `intent/intent_job.json` | Async intent job progress (UI polling) |
-| `summary/summary.json` | Optional task summary; prefer the `summary` field on the Workflow sample |
-| `workflow_sample.json` | Published **Workflow sample** |
+| `selection.json.corner_masks` | Final-video white overlays in screen-crop coordinates |
+| `keystrokes/raw_keystrokes.json` | Unfiltered keyboard-overlay detections |
+| `trace/keystrokes/keystrokes.json` | Filtered keyboard events (trace) |
+| `data/<id>/keystrokes/final_keystrokes.json` | Final filtered keyboard events |
+| `trace/keystrokes/keystroke_job.json` | Async keystroke job progress (trace) |
+| `cursor/raw_cursor_events.jsonl` | Unfiltered cursor detector output |
+| `trace/cursor/cursor_events.jsonl` | Filtered cursor events (trace) |
+| `trace/cursor/mouse_events.jsonl` | Normalized mouse events (trace) |
+| `data/<id>/cursor/final_cursor_events.jsonl` | Final filtered cursor movement |
+| `data/<id>/cursor/final_mouse_events.jsonl` | Final normalized mouse-button events |
+| `data/<id>/trace/final_processing_summary.json` | Finalization trace |
+| `trace/intent/speech_full.json` | Full-video ASR trace |
+| `trace/intent/speech_trimmed.json` | Trimmed-range ASR trace |
+| `trace/intent/action_intent_pairs.json` | Action–Intent pairs trace |
+| `trace/intent/intent_job.json` | Async intent job progress (trace) |
+| `trace/summary/summary.json` | Intermediate task summary (trace) |
+| `data/<id>/intent/final_speech_full.json` | Final full-video speech artifact |
+| `data/<id>/intent/final_speech_trimmed.json` | Final trimmed speech artifact |
+| `data/<id>/intent/final_action_intent_pairs.json` | Final Action–Intent pairs |
+| `data/<id>/summary/final_summary.json` | Final task summary |
+| `data/<id>/final_video.mp4` | Cropped, trimmed, white-masked final video |
+| `data/<id>/final_video.json` | Final-video render manifest |
+| `data/<id>/metadata.json` | Published artifact manifest |
 
 ### Workflow sample shape
 
@@ -124,7 +176,67 @@ Render a detection preview video:
 .venv/bin/python scripts/predict_yolo_video.py --selection runs/<video-id>/selection.json
 ```
 
+For a smaller QuickTime-friendly HEVC/H.265 MP4 with the source audio:
+
+```bash
+.venv/bin/python scripts/predict_yolo_video.py \
+  --model artifacts/models/cleaned-yolo11m-adamw/weights/best.pt \
+  --selection data/solidworks-tut/selection.json \
+  --full-video \
+  --hevc \
+  --output artifacts/predictions/solidworks-tut/cursor-detected-hevc.mp4
+```
+
 Preview MP4 + detections JSONL go to `artifacts/predictions/<video-id>/`.
+
+Reduce frame-level detections to the cursor track used by a Processing run:
+
+```bash
+python3 scripts/filter_cursor_events.py \
+  --input artifacts/predictions/solidworks-tut/detections-cleaned-yolo11m.jsonl \
+  --output runs/solidworks-tut/trace/cursor/cursor_events.jsonl
+```
+
+The raw detections are preserved. The filtered track uses confidence `0.4`,
+one box per frame, and a configurable movement threshold (default **4** pixels;
+editable in the Cursor → Extract tab). There is no time-based sampling or
+stationary heartbeat. A `filter_summary.json` is written beside the output. If a
+`keystrokes.json` artifact is available, pass `--keystrokes` to additionally
+write normalized mouse-button events; the overlay convention is `M1` =
+right-click and `M2` = left-click.
+
+To split an existing keyboard artifact manually:
+
+```bash
+python3 scripts/split_mouse_events.py runs/<video-id>
+```
+
+The workbench's **Generate final events + video** button consumes the raw
+artifacts already generated by the tabs, writes the filtered `final_` event
+files, copies the final intent and summary artifacts, maps M1 to right-click
+and M2 to left-click, and renders the final video. Workflow samples are not
+generated by this button. Intermediate traces stay under
+`runs/<video-id>/trace/`; published files go to `data/<video-id>/`.
+
+## Render the final video
+
+Render the saved screen region for its selected time range, mask the configured
+corner regions with white overlays, and write a silent H.264/AVC video for
+QuickTime compatibility:
+
+```bash
+.venv/bin/python scripts/render_final_video.py \
+  --selection runs/solidworks-tut/selection.json
+```
+
+The output is
+`data/solidworks-tut/final_video.mp4`, with a JSON render manifest
+beside it. In the Screen tab, choose **Draw bottom-left** or **Draw
+bottom-right** and drag the rectangle directly on the preview; save the
+selection before rendering. Purple tip cards are retained.
+
+Use repeated `--mask X,Y,WIDTH,HEIGHT` values to override the saved white masks
+from the command line.
 
 ## Layout
 

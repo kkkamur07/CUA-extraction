@@ -27,6 +27,14 @@ class TrackSelection:
 
 
 @dataclass(frozen=True)
+class CornerMasks:
+    """White rectangles in screen-crop coordinates for final-video redaction."""
+
+    bottom_left: CropROI
+    bottom_right: CropROI
+
+
+@dataclass(frozen=True)
 class ProjectSelection:
     """Shared configuration for one Processing run (written as selection.json)."""
 
@@ -41,6 +49,7 @@ class ProjectSelection:
     end: float
     screen: TrackSelection
     keyboard: TrackSelection
+    corner_masks: CornerMasks
 
 
 @dataclass(frozen=True)

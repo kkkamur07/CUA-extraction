@@ -44,6 +44,37 @@ export function runCursor(
   });
 }
 
+/** Run an in-repository Python script and collect stdout/stderr. */
+export function runPythonScript(
+  script: string,
+  args: string[],
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(PYTHON, [script, ...args], {
+      cwd: REPO_ROOT,
+      env: process.env,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", (err) => {
+      resolve({
+        code: 1,
+        stdout,
+        stderr: `${stderr}\nFailed to spawn Python script: ${err.message}`.trim(),
+      });
+    });
+    child.on("close", (code) => {
+      resolve({ code, stdout, stderr });
+    });
+  });
+}
+
 /** Run a `python -m cursor …` command that writes binary data to stdout. */
 export function runCursorBinary(
   args: string[],

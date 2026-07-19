@@ -11,6 +11,7 @@ import {
 import type { CropROI } from "@/lib/types";
 
 type Mode = "roi" | "bbox";
+type InteractionMode = "roi" | "mask";
 
 type Props = {
   videoSrc: string;
@@ -18,6 +19,9 @@ type Props = {
   roi: CropROI;
   onRoiChange?: (roi: CropROI) => void;
   onBbox?: (box: CropROI, patchDataUrl: string) => void;
+  onMaskChange?: (box: CropROI) => void;
+  interactionMode?: InteractionMode;
+  overlays?: CropROI[];
   currentTime: number;
   /**
    * When set, frames are fetched by frame number (round(currentTime * fps))
@@ -46,6 +50,9 @@ export function VideoCanvas({
   roi,
   onRoiChange,
   onBbox,
+  onMaskChange,
+  interactionMode = "roi",
+  overlays = [],
   currentTime,
   fps,
   onMeta,
@@ -92,6 +99,10 @@ export function VideoCanvas({
       ctx.strokeStyle = "#e11d48";
       ctx.lineWidth = Math.max(2, Math.round(nw / 600));
       ctx.strokeRect(box.x, box.y, box.width, box.height);
+      for (const overlay of overlays) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(overlay.x, overlay.y, overlay.width, overlay.height);
+      }
     }
 
     if (mode === "bbox" && draft) {
@@ -99,8 +110,15 @@ export function VideoCanvas({
       ctx.lineWidth = 2;
       ctx.strokeRect(draft.x, draft.y, draft.width, draft.height);
     }
+    if (interactionMode === "mask" && draft) {
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8, 5]);
+      ctx.strokeRect(draft.x, draft.y, draft.width, draft.height);
+      ctx.setLineDash([]);
+    }
     setReady(true);
-  }, [cropToRoi, draft, mode, roi]);
+  }, [cropToRoi, draft, interactionMode, mode, overlays, roi]);
 
   useEffect(() => {
     draw();
@@ -108,7 +126,6 @@ export function VideoCanvas({
 
   useEffect(() => {
     metaSentRef.current = false;
-    setError("");
     naturalRef.current = { width: 0, height: 0 };
     frameRef.current?.close();
     frameRef.current = null;
@@ -195,7 +212,9 @@ export function VideoCanvas({
     draftRef.current = null;
     setDraft(null);
     if (!box || box.width < 2 || box.height < 2) return;
-    if (mode === "roi") {
+    if (interactionMode === "mask") {
+      onMaskChange?.(box);
+    } else if (mode === "roi") {
       onRoiChange?.(box);
     } else if (mode === "bbox" && onBbox && canvasRef.current) {
       const canvas = canvasRef.current;
@@ -218,7 +237,7 @@ export function VideoCanvas({
         onBbox(box, patch.toDataURL("image/png"));
       }
     }
-  }, [mode, onBbox, onRoiChange]);
+  }, [interactionMode, mode, onBbox, onMaskChange, onRoiChange]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     event.preventDefault();
@@ -270,7 +289,9 @@ export function VideoCanvas({
       )}
       {error && <p className="text-sm text-rose-700">{error}</p>}
       <p className="text-sm text-[var(--muted)]">
-        {mode === "roi"
+        {interactionMode === "mask"
+          ? "Drag on the frame to draw the selected white mask."
+          : mode === "roi"
           ? "Drag on the frame to set the crop ROI."
           : "Drag a tight box around the cursor to save a label. Use ←/→ to step frames."}
       </p>

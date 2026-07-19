@@ -65,7 +65,8 @@ export function KeyboardTab({
         />
         <aside className="space-y-4 rounded border border-[var(--line)] bg-[var(--wash)] p-4">
           <p className="text-xs text-[var(--muted)]">
-            Keyboard ROI only. Uses the shared time range from Screen extraction.
+            Set the keyboard-overlay ROI, then run extraction. The final button
+            reuses the raw and filtered keyboard files from this tab.
           </p>
           <div>
             <label className="text-xs uppercase tracking-wide text-[var(--muted)]">

@@ -3,8 +3,10 @@
 import { useCallback, useState } from "react";
 
 import {
+  defaultCornerMasks,
   defaultTrack,
   flattenScreen,
+  type CornerMasks,
   type ProjectSelection,
   type TrackKind,
   type TrackSelection,
@@ -19,6 +21,7 @@ export function useSelectionState(projectId: string, videoName: string) {
   const [saving, setSaving] = useState(false);
   const [screen, setScreen] = useState<TrackSelection | null>(null);
   const [keyboard, setKeyboard] = useState<TrackSelection | null>(null);
+  const [cornerMasks, setCornerMasks] = useState<CornerMasks | null>(null);
   const [selectionSaved, setSelectionSaved] = useState(false);
   const [selectionDirty, setSelectionDirty] = useState(false);
 
@@ -31,6 +34,15 @@ export function useSelectionState(projectId: string, videoName: string) {
         ...defaultTrack(w, kh, d),
         roi: { x: 0, y: Math.max(0, h - kh), width: w, height: kh },
       };
+    });
+    setCornerMasks((prev) => {
+      if (prev) return prev;
+      const screenTrack = defaultTrack(w, h, d);
+      const keyboardTrack = {
+        ...defaultTrack(w, Math.min(240, h), d),
+        roi: { x: 0, y: Math.max(0, h - Math.min(240, h)), width: w, height: Math.min(240, h) },
+      };
+      return defaultCornerMasks(screenTrack.roi, keyboardTrack.roi);
     });
   }, []);
 
@@ -57,6 +69,7 @@ export function useSelectionState(projectId: string, videoName: string) {
   const applyLoadedSelection = (selection: ProjectSelection) => {
     setScreen(selection.screen);
     setKeyboard(selection.keyboard);
+    setCornerMasks(selection.corner_masks);
     setFps(selection.fps || 30);
     setWidth(selection.frame_width);
     setHeight(selection.frame_height);
@@ -70,7 +83,7 @@ export function useSelectionState(projectId: string, videoName: string) {
     onStatus: (msg: string) => void,
     onError: (msg: string) => void,
   ) => {
-    if (!screen || !keyboard) {
+    if (!screen || !keyboard || !cornerMasks) {
       onError("Wait for the video to load before saving.");
       return;
     }
@@ -108,6 +121,7 @@ export function useSelectionState(projectId: string, videoName: string) {
       end: nextScreen.end,
       screen: nextScreen,
       keyboard: nextKeyboard,
+      corner_masks: cornerMasks,
     });
     try {
       const res = await fetch(`/api/projects/${projectId}/selection`, {
@@ -119,6 +133,7 @@ export function useSelectionState(projectId: string, videoName: string) {
       if (!res.ok) throw new Error(json.error || "Save failed");
       setScreen(json.screen);
       setKeyboard(json.keyboard);
+      setCornerMasks(json.corner_masks);
       setSelectionSaved(true);
       setSelectionDirty(false);
       onStatus(`Saved runs/${projectId}/selection.json`);
@@ -140,6 +155,8 @@ export function useSelectionState(projectId: string, videoName: string) {
     saving,
     screen,
     keyboard,
+    cornerMasks,
+    setCornerMasks,
     selectionSaved,
     selectionDirty,
     setSelectionDirty,

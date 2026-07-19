@@ -43,3 +43,7 @@ data/**/yolo-data-quality.json
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+
+# Local published project outputs and tutorial data copies (videos, finals).
+# Already-tracked solidworks-tut templates/selection remain in the index.
+data/

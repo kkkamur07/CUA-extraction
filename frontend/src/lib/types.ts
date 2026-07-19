@@ -14,6 +14,11 @@ export type TrackSelection = {
   preview_timestamp: number;
 };
 
+export type CornerMasks = {
+  bottom_left: CropROI;
+  bottom_right: CropROI;
+};
+
 export type ProjectSelection = {
   id: string;
   video: string;
@@ -27,6 +32,7 @@ export type ProjectSelection = {
   end: number;
   screen: TrackSelection;
   keyboard: TrackSelection;
+  corner_masks: CornerMasks;
 };
 
 export type VideoInfo = {
@@ -35,6 +41,8 @@ export type VideoInfo = {
   path: string;
   sizeBytes: number;
   hasSelection: boolean;
+  /** True when published final artifacts exist under data/<id>/. */
+  hasFinalOutput: boolean;
 };
 
 export type AnnotationRecord = {
@@ -79,6 +87,55 @@ export function flattenScreen(selection: ProjectSelection): ProjectSelection {
     end: selection.screen.end,
   };
 }
+
+export function defaultCornerMasks(
+  screen: CropROI,
+  keyboard: CropROI,
+): CornerMasks {
+  const left = Math.max(screen.x, keyboard.x);
+  const top = Math.max(screen.y, keyboard.y);
+  const right = Math.min(screen.x + screen.width, keyboard.x + keyboard.width);
+  const bottom = Math.min(screen.y + screen.height, keyboard.y + keyboard.height);
+  const leftMask =
+    left < right && top < bottom
+      ? {
+          x: 0,
+          y: top - screen.y,
+          width: right - screen.x,
+          height: screen.height - (top - screen.y),
+        }
+      : {
+          x: 0,
+          y: Math.max(0, screen.height - Math.min(200, screen.height)),
+          width: Math.min(360, screen.width),
+          height: Math.min(200, screen.height),
+        };
+  const timerWidth = Math.min(300, screen.width);
+  const timerY = Math.min(
+    screen.height,
+    Math.max(0, Math.round(screen.height * 0.45)),
+  );
+  return {
+    bottom_left: leftMask,
+    bottom_right: {
+      x: screen.width - timerWidth,
+      y: timerY,
+      width: timerWidth,
+      height: screen.height - timerY,
+    },
+  };
+}
+
+/** Cursor track filtering thresholds (applied to raw YOLO detections). */
+export type CursorFilterCriteria = {
+  min_confidence: number;
+  min_move_px: number;
+};
+
+export const DEFAULT_CURSOR_FILTER: CursorFilterCriteria = {
+  min_confidence: 0.4,
+  min_move_px: 4,
+};
 
 /** One labeled tutorial step: Action + Intent over a shared time range. */
 export type ActionIntentPair = {

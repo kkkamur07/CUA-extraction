@@ -4,12 +4,22 @@ import { NextResponse } from "next/server";
 
 import {
   VIDEO_DIR,
+  finalVideoPath,
   selectionPath,
   slugFromVideoName,
 } from "@/lib/paths";
 import type { VideoInfo } from "@/lib/types";
 
 export const runtime = "nodejs";
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function GET() {
   await fs.mkdir(VIDEO_DIR, { recursive: true });
@@ -22,19 +32,17 @@ export async function GET() {
     const stat = await fs.stat(filePath);
     if (!stat.isFile()) continue;
     const id = slugFromVideoName(name);
-    let hasSelection = false;
-    try {
-      await fs.access(selectionPath(id));
-      hasSelection = true;
-    } catch {
-      hasSelection = false;
-    }
+    const [hasSelection, hasFinalOutput] = await Promise.all([
+      pathExists(selectionPath(id)),
+      pathExists(finalVideoPath(id)),
+    ]);
     videos.push({
       name,
       id,
       path: `video/${name}`,
       sizeBytes: stat.size,
       hasSelection,
+      hasFinalOutput,
     });
   }
 

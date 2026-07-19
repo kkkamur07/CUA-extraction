@@ -4,7 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { dataProjectDir, projectDir, selectionPath } from "@/lib/paths";
 import path from "node:path";
 import {
+  defaultCornerMasks,
   flattenScreen,
+  type CornerMasks,
   type ProjectSelection,
   type TrackSelection,
 } from "@/lib/types";
@@ -31,6 +33,12 @@ function isTrack(value: unknown): value is TrackSelection {
     typeof track.end === "number" &&
     typeof track.preview_timestamp === "number"
   );
+}
+
+function isCornerMasks(value: unknown): value is CornerMasks {
+  if (!value || typeof value !== "object") return false;
+  const masks = value as Record<string, unknown>;
+  return isRoi(masks.bottom_left) && isRoi(masks.bottom_right);
 }
 
 function normalize(raw: Record<string, unknown>, id: string): ProjectSelection | null {
@@ -65,6 +73,9 @@ function normalize(raw: Record<string, unknown>, id: string): ProjectSelection |
       preview_timestamp: screen.preview_timestamp,
     };
   }
+  const corner_masks = isCornerMasks(raw.corner_masks)
+    ? raw.corner_masks
+    : defaultCornerMasks(screen.roi, keyboard.roi);
 
   return flattenScreen({
     id,
@@ -78,6 +89,7 @@ function normalize(raw: Record<string, unknown>, id: string): ProjectSelection |
     end: screen.end,
     screen,
     keyboard,
+    corner_masks,
   });
 }
 

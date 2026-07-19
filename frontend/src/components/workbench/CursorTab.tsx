@@ -2,7 +2,12 @@
 
 import { LabelSearch } from "@/components/LabelSearch";
 import { VideoCanvas } from "@/components/VideoCanvas";
-import type { CropROI, CursorRawEvent, TrackSelection } from "@/lib/types";
+import type {
+  CropROI,
+  CursorFilterCriteria,
+  CursorRawEvent,
+  TrackSelection,
+} from "@/lib/types";
 
 import { formatTime } from "./format";
 import { LABEL_PRESETS, type CursorMode, type CursorWeightsStatus } from "./types";
@@ -23,6 +28,8 @@ type Props = {
   cursorRunning: boolean;
   cursorEvents: CursorRawEvent[];
   weights: CursorWeightsStatus | null;
+  filter: CursorFilterCriteria;
+  hasRaw: boolean;
   onModeChange: (mode: CursorMode) => void;
   onTimeUpdate: (t: number) => void;
   onMeta: (meta: { duration: number; width: number; height: number }) => void;
@@ -32,7 +39,9 @@ type Props = {
   onAutoAdvanceChange: (v: boolean) => void;
   onStepFramesChange: (n: number) => void;
   onStep: (direction: -1 | 1) => void;
+  onFilterChange: (filter: CursorFilterCriteria) => void;
   onRunExtract: () => void;
+  onRefilter: () => void;
 };
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
@@ -66,6 +75,8 @@ export function CursorTab({
   cursorRunning,
   cursorEvents,
   weights,
+  filter,
+  hasRaw,
   onModeChange,
   onTimeUpdate,
   onMeta,
@@ -75,7 +86,9 @@ export function CursorTab({
   onAutoAdvanceChange,
   onStepFramesChange,
   onStep,
+  onFilterChange,
   onRunExtract,
+  onRefilter,
 }: Props) {
   return (
     <section className="space-y-4">
@@ -199,15 +212,19 @@ export function CursorTab({
       {mode === "extract" && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-4 rounded border border-[var(--line)] bg-[var(--wash)] p-4">
-            <div className="min-w-0 flex-1">
-              <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                Cursor extraction
-              </p>
-              <p className="mt-1 text-sm">
-                Runs YOLO over the Crop ROI + time range only. Train weights first if missing.
-              </p>
+            <div className="min-w-0 flex-1 space-y-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
+                  Cursor extraction
+                </p>
+                <p className="mt-1 text-sm">
+                  Run YOLO over the saved screen crop, then thin the track with
+                  the filter criteria below. Re-filter reuses existing raw
+                  detections without re-running YOLO.
+                </p>
+              </div>
               {weights && (
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2">
                   <StatusPill
                     ok={weights.found}
                     label={
@@ -218,15 +235,65 @@ export function CursorTab({
                   />
                 </div>
               )}
+              <div className="grid max-w-md grid-cols-2 gap-3">
+                <label className="block text-sm">
+                  <span className="text-xs uppercase tracking-wide text-[var(--muted)]">
+                    Min confidence
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={filter.min_confidence}
+                    onChange={(event) =>
+                      onFilterChange({
+                        ...filter,
+                        min_confidence: Number(event.target.value),
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-[var(--line)] bg-[var(--paper)] px-2 py-1.5"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="text-xs uppercase tracking-wide text-[var(--muted)]">
+                    Min move (px)
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={64}
+                    step={1}
+                    value={filter.min_move_px}
+                    onChange={(event) =>
+                      onFilterChange({
+                        ...filter,
+                        min_move_px: Number(event.target.value),
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-[var(--line)] bg-[var(--paper)] px-2 py-1.5"
+                  />
+                </label>
+              </div>
             </div>
-            <button
-              type="button"
-              disabled={runDisabled || cursorRunning || weights?.found === false}
-              onClick={onRunExtract}
-              className="rounded bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--paper)] disabled:opacity-60"
-            >
-              {cursorRunning ? "Running…" : "Run cursor extraction"}
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                disabled={runDisabled || cursorRunning || weights?.found === false}
+                onClick={onRunExtract}
+                className="rounded bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--paper)] disabled:opacity-60"
+              >
+                {cursorRunning ? "Running…" : "Run cursor extraction"}
+              </button>
+              <button
+                type="button"
+                disabled={runDisabled || cursorRunning || !hasRaw}
+                onClick={onRefilter}
+                className="rounded border border-[var(--line)] bg-[var(--paper)] px-4 py-2 text-sm disabled:opacity-60"
+              >
+                Re-filter only
+              </button>
+            </div>
           </div>
           {cursorEvents.length === 0 ? (
             <p className="text-sm text-[var(--muted)]">No cursor events yet.</p>
