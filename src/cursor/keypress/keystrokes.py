@@ -34,7 +34,7 @@ DEFAULT_LAYOUT_NAME = "tootalltoby.json"
 _DEFAULT_LAYOUT_NAME = DEFAULT_LAYOUT_NAME  # back-compat
 DEFAULT_STRIDE = 1
 POLL_INTERVAL_S = 0.25
-MOUSE_BUTTON_MAPPING = {"M1": "right", "M2": "left"}
+MOUSE_BUTTON_MAPPING = {"M1": "left", "M2": "right"}
 
 
 def _is_mouse_overlay_event(event: dict[str, Any]) -> bool:

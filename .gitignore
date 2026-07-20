@@ -47,3 +47,6 @@ frontend/out/
 # Local published project outputs and tutorial data copies (videos, finals).
 # Already-tracked solidworks-tut templates/selection remain in the index.
 data/
+
+# local copy of the Drive data samples (updated actions are re-uploaded to Drive)
+drive_data/

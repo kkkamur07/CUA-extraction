@@ -13,6 +13,7 @@ from .cli_handlers import (
     run_extract_keystrokes,
     run_extract_keystrokes_async,
     run_pipeline_cmd,
+    run_reduce_actions,
     run_stub_workflow,
 )
 
@@ -36,6 +37,7 @@ def main(argv: list[str] | None = None) -> None:
         "extract-cursor",
         "run-pipeline",
         "dump-frame",
+        "reduce-actions",
     }
 
     if cmd is None or cmd in {"-h", "--help"} or cmd not in commands:
@@ -49,7 +51,7 @@ def main(argv: list[str] | None = None) -> None:
             help=(
                 "stub-workflow | extract-intent | extract-intent-async | "
                 "extract-keystrokes | extract-keystrokes-async | "
-                "extract-cursor | run-pipeline | dump-frame"
+                "extract-cursor | run-pipeline | dump-frame | reduce-actions"
             ),
         )
         parser.print_help()
@@ -162,4 +164,42 @@ def main(argv: list[str] | None = None) -> None:
         parser.add_argument("--skip-existing", action="store_true")
         parser.add_argument("--json", action="store_true")
         run_pipeline_cmd(parser.parse_args(argv[1:]))
+        return
+
+    if cmd == "reduce-actions":
+        parser = argparse.ArgumentParser(
+            prog="cursor reduce-actions",
+            description=(
+                "Reduce extracted event streams into OpenCUA/AgentNet-style "
+                "pyautogui actions (arXiv:2508.09123 Section 2.2). Consumes "
+                "already-extracted artifacts only — never the video."
+            ),
+        )
+        parser.add_argument(
+            "project_dir",
+            help="Published data/<id> directory (final_*) or a processing run directory",
+        )
+        parser.add_argument(
+            "--output",
+            default=None,
+            help="Output JSON path (default: <project_dir>/actions/final_actions_opencua.json)",
+        )
+        parser.add_argument("--drag-min-px", type=float, default=12.0)
+        parser.add_argument("--multi-click-gap-s", type=float, default=0.4)
+        parser.add_argument("--write-max-gap-s", type=float, default=2.0)
+        parser.add_argument(
+            "--terminate-status",
+            default="success",
+            choices=["success", "failure", "none"],
+            help="Status of the appended terminate action ('none' disables it)",
+        )
+        parser.add_argument(
+            "--no-remap-buttons",
+            action="store_true",
+            help="Trust the button field of extracted mouse events as-is "
+                 "(default remaps M1->left / M2->right via source_key, correcting "
+                 "artifacts extracted with the previously inverted mapping)",
+        )
+        parser.add_argument("--json", action="store_true", help="Print full result JSON")
+        run_reduce_actions(parser.parse_args(argv[1:]))
         return

@@ -194,6 +194,15 @@ export async function POST(
     copyArtifact(rawKeystrokesPath(id), publishedRawKeystrokesPath(id)),
   ]);
 
+  // OpenCUA/AgentNet-style action reduction over the published final events
+  // (arXiv:2508.09123 Section 2.2) — pure post-processing, never reads video.
+  const actionReduction = await runPythonScript("scripts/reduce_actions_opencua.py", [
+    publishedProjectDir(id),
+  ]);
+  if (actionReduction.code !== 0) {
+    return fail(id, "opencua action reduction", actionReduction);
+  }
+
   const finalVideoOutput = finalVideoPath(id);
   const finalVideoRender = await runPythonScript("scripts/render_final_video.py", [
     "--selection",
@@ -224,6 +233,7 @@ export async function POST(
         "final_action_intent_pairs.json",
       ),
       final_summary: path.join("data", id, "summary", "final_summary.json"),
+      final_actions_opencua: path.join("data", id, "actions", "final_actions_opencua.json"),
       final_video: path.join("data", id, "final_video.mp4"),
       final_video_manifest: path.join("data", id, "final_video.json"),
       final_processing_summary: path.join(
