@@ -75,6 +75,20 @@ reduction automatically after final-event normalization and registers
 Tests (stdlib only): `PYTHONPATH=src python tests/test_reduce_opencua.py` —
 15 cases covering every rule above.
 
+### Visual verification
+
+```bash
+python -m cursor view-actions data/<id>        # http://127.0.0.1:8899
+```
+
+Serves a local viewer (stdlib HTTP server with byte-range support) that plays
+`final_video.mp4` with the reduced actions rendered on top of the frame:
+click ripples / double- and triple-click badges, dashed drag arrows with a
+progress dot, a keycast banner for `write`/`hotkey`/`press` (plus held
+modifiers), a color-coded action timeline, and a clickable auto-following
+action list. Coordinates are drawn in final-video space, so any systematic
+offset in the extraction would be immediately visible.
+
 ## All changes on this branch
 
 1. **New package `src/cursor/reduce/`** — `opencua.py` (reduction engine,

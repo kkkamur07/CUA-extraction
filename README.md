@@ -136,6 +136,11 @@ timestamps plus an observation keyframe. The workbench runs this automatically
 during **Generate final events + video**. Details, schema, and the M1/M2
 button-mapping fix: `docs/opencua-action-reduction.md`.
 
+To verify visually, `python -m cursor view-actions data/<id>` serves a local
+viewer that plays `final_video.mp4` with the reduced actions overlaid — click
+ripples and drag arrows on the frame, a keycast banner for
+write/hotkey/press, a clickable action list, and an action timeline.
+
 ## Train a YOLO cursor detector
 
 Training source of truth in git is `data/<video-id>/selection.json`, **Cursor

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OpenCUA Action Viewer</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #14161a; color: #d8dce2;
+         font: 14px/1.45 -apple-system, "Segoe UI", sans-serif; }
+  #app { display: flex; gap: 14px; padding: 14px; height: 100vh; }
+  #left { flex: 1 1 68%; display: flex; flex-direction: column; min-width: 0; }
+  #right { flex: 0 0 380px; display: flex; flex-direction: column; min-width: 0; }
+  h1 { font-size: 15px; margin: 0 0 8px; color: #fff; }
+  #stage { position: relative; background: #000; border-radius: 10px; overflow: hidden; }
+  video { display: block; width: 100%; }
+  #ov { position: absolute; inset: 0; pointer-events: none; }
+  #keycast {
+    position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%);
+    background: #000000cc; border: 1px solid #ffffff33; border-radius: 10px;
+    padding: 8px 22px; font: 600 26px/1.3 ui-monospace, Menlo, monospace;
+    color: #fff; white-space: nowrap; display: none; max-width: 92%;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  #keycast .kind { font-size: 12px; color: #9fc3ff; display: block;
+                   letter-spacing: 2px; text-transform: uppercase; }
+  #timeline { height: 64px; background: #101216; border-radius: 8px; margin-top: 10px;
+              cursor: pointer; width: 100%; }
+  #meta { margin-top: 8px; color: #8b93a1; font-size: 12.5px; }
+  #list { flex: 1; overflow-y: auto; border: 1px solid #262b33; border-radius: 10px;
+          background: #1b1e24; }
+  .act { padding: 7px 10px; border-bottom: 1px solid #22262e; cursor: pointer;
+         display: flex; gap: 8px; align-items: baseline; }
+  .act:hover { background: #232833; }
+  .act.on { background: #26334a; box-shadow: inset 3px 0 0 #4f8ef7; }
+  .act .t { color: #6b7280; font: 11.5px ui-monospace, Menlo, monospace; flex: 0 0 62px; }
+  .act .tag { flex: 0 0 84px; font-size: 11.5px; font-weight: 700; border-radius: 5px;
+              text-align: center; padding: 1px 4px; }
+  .act .code { color: #aab1bb; font: 11.5px ui-monospace, Menlo, monospace;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag.click, .tag.rightClick, .tag.middleClick { background: #1f4d2c; color: #b9f0c8; }
+  .tag.doubleClick, .tag.tripleClick { background: #145252; color: #a8ecec; }
+  .tag.dragTo { background: #1d3a63; color: #a9c8f5; }
+  .tag.write { background: #58421a; color: #f5d9a0; }
+  .tag.hotkey { background: #4d2455; color: #e6b9f0; }
+  .tag.press { background: #43314d; color: #d9c8ea; }
+  .tag.terminate { background: #5c2b2b; color: #f0b9b9; }
+  #stats { font-size: 12.5px; color: #8b93a1; margin: 8px 0; line-height: 1.7; }
+  #stats b { color: #e6e9ee; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <h1 id="title">OpenCUA Action Viewer</h1>
+    <div id="stage">
+      <video id="vid" src="video" controls playsinline></video>
+      <canvas id="ov"></canvas>
+      <div id="keycast"></div>
+    </div>
+    <canvas id="timeline"></canvas>
+    <div id="meta"></div>
+  </div>
+  <div id="right">
+    <div id="stats"></div>
+    <div id="list"></div>
+  </div>
+</div>
+<script>
+"use strict";
+const COLORS = { click: "#3fe06f", rightClick: "#3fe06f", middleClick: "#3fe06f",
+  doubleClick: "#2ec4c4", tripleClick: "#2ec4c4", dragTo: "#4f8ef7",
+  write: "#f0b429", hotkey: "#c26fe0", press: "#a98bd4", terminate: "#e05252" };
+const LINGER = 0.9;          // keep an action visible this long after t_end
+
+let DOC = null, actions = [];
+const vid = document.getElementById("vid");
+const ov = document.getElementById("ov");
+const tl = document.getElementById("timeline");
+const keycast = document.getElementById("keycast");
+
+const fmt = t => {
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(Math.round(t % 1 * 10))}`;
+};
+
+async function boot() {
+  DOC = await (await fetch("actions")).json();
+  actions = DOC.actions.filter(a => a.action !== "terminate");
+  document.getElementById("title").textContent =
+    `OpenCUA Action Viewer — ${DOC.id}`;
+  const s = DOC.stats;
+  document.getElementById("stats").innerHTML =
+    `<b>${s.n_actions}</b> actions from <b>${s.n_raw_events}</b> raw events ` +
+    `(<b>${s.reduction_ratio}:1</b>)<br>` +
+    Object.entries(s.action_histogram).sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k} <b>${v}</b>`).join(" · ");
+  const list = document.getElementById("list");
+  list.innerHTML = actions.map((a, i) =>
+    `<div class="act" id="act-${i}" data-i="${i}">
+       <span class="t">${fmt(a.t_start)}</span>
+       <span class="tag ${a.action}">${a.action}</span>
+       <span class="code">${a.pyautogui_code.replace(/pyautogui\./g, "")}</span>
+     </div>`).join("");
+  list.onclick = e => {
+    const row = e.target.closest(".act");
+    if (row) { vid.currentTime = actions[+row.dataset.i].t_start; vid.pause(); }
+  };
+  tick();
+}
+
+function activeActions(t) {
+  return actions.map((a, i) => ({ a, i }))
+    .filter(({ a }) => a.t_start <= t && t <= a.t_end + LINGER);
+}
+
+let lastListIdx = -1;
+function tick() {
+  requestAnimationFrame(tick);
+  if (!DOC || !vid.videoWidth) return;
+  const t = vid.currentTime;
+  const W = ov.width = vid.clientWidth * devicePixelRatio;
+  const H = ov.height = vid.clientHeight * devicePixelRatio;
+  ov.style.width = vid.clientWidth + "px";
+  ov.style.height = vid.clientHeight + "px";
+  const sx = W / DOC.screen.width, sy = H / DOC.screen.height;
+  const c = ov.getContext("2d");
+  c.clearRect(0, 0, W, H);
+
+  const act = activeActions(t);
+  let castText = null, castKind = null;
+  for (const { a } of act) {
+    const col = COLORS[a.action] || "#fff";
+    const prog = Math.min(1, Math.max(0, (t - a.t_start) / Math.max(0.15, a.t_end - a.t_start)));
+    if (a.action === "dragTo" && a.pixels && a.pixels.from) {
+      const x0 = a.pixels.from.x * sx, y0 = a.pixels.from.y * sy;
+      const x1 = a.pixels.to.x * sx, y1 = a.pixels.to.y * sy;
+      c.strokeStyle = col; c.lineWidth = 3 * devicePixelRatio;
+      c.setLineDash([8, 6]);
+      c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+      c.setLineDash([]);
+      const hx = x0 + (x1 - x0) * prog, hy = y0 + (y1 - y0) * prog;
+      c.fillStyle = col;
+      c.beginPath(); c.arc(hx, hy, 7 * devicePixelRatio, 0, 7); c.fill();
+      c.beginPath(); c.arc(x0, y0, 4 * devicePixelRatio, 0, 7); c.fill();
+      // arrow head at target
+      const ang = Math.atan2(y1 - y0, x1 - x0), L = 12 * devicePixelRatio;
+      c.beginPath(); c.moveTo(x1, y1);
+      c.lineTo(x1 - L * Math.cos(ang - 0.4), y1 - L * Math.sin(ang - 0.4));
+      c.lineTo(x1 - L * Math.cos(ang + 0.4), y1 - L * Math.sin(ang + 0.4));
+      c.closePath(); c.fill();
+    } else if (a.pixels && a.pixels.x !== undefined) {
+      const x = a.pixels.x * sx, y = a.pixels.y * sy;
+      const r = (10 + 26 * prog) * devicePixelRatio;
+      c.strokeStyle = col; c.lineWidth = 3 * devicePixelRatio;
+      c.globalAlpha = 1 - 0.7 * prog;
+      c.beginPath(); c.arc(x, y, r, 0, 7); c.stroke();
+      c.globalAlpha = 1;
+      c.fillStyle = col;
+      c.beginPath(); c.arc(x, y, 4 * devicePixelRatio, 0, 7); c.fill();
+      const n = a.action === "doubleClick" ? "2×" : a.action === "tripleClick" ? "3×" : null;
+      if (n) { c.font = `700 ${14 * devicePixelRatio}px sans-serif`;
+               c.fillText(n, x + 12 * devicePixelRatio, y - 12 * devicePixelRatio); }
+    }
+    if (a.action === "write") { castKind = "write"; castText = JSON.stringify(a.args.text); }
+    if (a.action === "hotkey") { castKind = "hotkey"; castText = a.args.keys.join(" + "); }
+    if (a.action === "press") {
+      castKind = "press";
+      castText = a.args.key + (a.args.presses > 1 ? ` ×${a.args.presses}` : "");
+    }
+    if (a.modifiers && a.modifiers.length && a.action !== "hotkey") {
+      castKind = castKind || a.action;
+      castText = (castText ? castText + "  " : "") + `[${a.modifiers.join("+")} held]`;
+    }
+  }
+  keycast.style.display = castText ? "block" : "none";
+  if (castText) keycast.innerHTML =
+    `<span class="kind">${castKind}</span>${castText.replace(/</g, "&lt;")}`;
+
+  // action list highlight + autoscroll
+  const cur = act.length ? act[act.length - 1].i
+    : actions.findLastIndex(a => a.t_start <= t);
+  if (cur !== lastListIdx && cur >= 0) {
+    lastListIdx = cur;
+    document.querySelectorAll(".act.on").forEach(x => x.classList.remove("on"));
+    const row = document.getElementById("act-" + cur);
+    if (row) { row.classList.add("on"); row.scrollIntoView({ block: "center" }); }
+  }
+  drawTimeline(t);
+  document.getElementById("meta").textContent =
+    `t = ${fmt(t)} / ${fmt(vid.duration || 0)}`;
+}
+
+function drawTimeline(t) {
+  const W = tl.width = tl.clientWidth * devicePixelRatio;
+  const H = tl.height = 64 * devicePixelRatio;
+  const c = tl.getContext("2d");
+  const dur = vid.duration || 1;
+  c.clearRect(0, 0, W, H);
+  for (const a of actions) {
+    c.fillStyle = COLORS[a.action] || "#888";
+    const x = a.t_start / dur * W;
+    const w = Math.max(2, (a.t_end - a.t_start) / dur * W);
+    c.fillRect(x, H * 0.2, w, H * 0.6);
+  }
+  c.strokeStyle = "#ff5252"; c.lineWidth = 2 * devicePixelRatio;
+  c.beginPath(); c.moveTo(t / dur * W, 0); c.lineTo(t / dur * W, H); c.stroke();
+}
+tl.onclick = e => {
+  const r = tl.getBoundingClientRect();
+  vid.currentTime = (e.clientX - r.left) / r.width * (vid.duration || 0);
+};
+boot();
+</script>
+</body>
+</html>

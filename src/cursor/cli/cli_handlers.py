@@ -173,3 +173,9 @@ def run_reduce_actions(args: argparse.Namespace) -> None:
         for name, count in sorted(stats["action_histogram"].items(), key=lambda kv: -kv[1]):
             print(f"  {name:<12} {count}")
         print(f"Wrote {doc['output_path']}")
+
+
+def run_view_actions(args: argparse.Namespace) -> None:
+    from ..reduce.viewer import serve
+
+    serve(args.project_dir, port=args.port, open_browser=not args.no_open)
