@@ -70,6 +70,7 @@ dataset is written under `data/<id>`:
 | `trace/cursor/mouse_events.jsonl` | Normalized mouse events (trace) |
 | `data/<id>/cursor/final_cursor_events.jsonl` | Final filtered cursor movement |
 | `data/<id>/cursor/final_mouse_events.jsonl` | Final normalized mouse-button events |
+| `data/<id>/actions/final_actions_opencua.json` | OpenCUA/AgentNet-style reduced actions (see `docs/opencua-action-reduction.md`) |
 | `data/<id>/trace/final_processing_summary.json` | Finalization trace |
 | `trace/intent/speech_full.json` | Full-video ASR trace |
 | `trace/intent/speech_trimmed.json` | Trimmed-range ASR trace |
@@ -123,6 +124,22 @@ ASR and Action–Intent / summary both use the **OpenAI API**
 cp .env.example .env   # set OPENAI_API_KEY
 .venv/bin/python -m cursor extract-intent runs/<id>
 ```
+
+## OpenCUA action reduction
+
+`python -m cursor reduce-actions data/<id>` converts the extracted event
+streams into the compact pyautogui action format of the OpenCUA paper
+(arXiv:2508.09123): noisy cursor motion is dropped (moves only survive as
+click/drag coordinates), key presses merge into `write`/`hotkey`/`press`
+actions, drags and double/triple clicks are combined, and every action carries
+timestamps plus an observation keyframe. The workbench runs this automatically
+during **Generate final events + video**. Details, schema, and the M1/M2
+button-mapping fix: `docs/opencua-action-reduction.md`.
+
+To verify visually, `python -m cursor view-actions data/<id>` serves a local
+viewer that plays `final_video.mp4` with the reduced actions overlaid — click
+ripples and drag arrows on the frame, a keycast banner for
+write/hotkey/press, a clickable action list, and an action timeline.
 
 ## Train a YOLO cursor detector
 

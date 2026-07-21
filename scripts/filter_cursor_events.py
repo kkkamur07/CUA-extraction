@@ -40,8 +40,8 @@ class Detection:
 
 
 MOUSE_BUTTONS = {
-    "M1": "right",
-    "M2": "left",
+    "M1": "left",
+    "M2": "right",
 }
 
 

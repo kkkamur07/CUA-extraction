@@ -150,3 +150,32 @@ def run_pipeline_cmd(args: argparse.Namespace) -> None:
             print(f"  [{step.status}] {step.name}{suffix}")
         if result.sample_path:
             print(f"Wrote Workflow sample to {result.sample_path}")
+
+
+def run_reduce_actions(args: argparse.Namespace) -> None:
+    from ..reduce.opencua import ReduceParams, reduce_project
+
+    status = None if args.terminate_status == "none" else args.terminate_status
+    params = ReduceParams(
+        drag_min_px=args.drag_min_px,
+        multi_click_gap_s=args.multi_click_gap_s,
+        write_max_gap_s=args.write_max_gap_s,
+        terminate_status=status,
+        button_map=None if args.no_remap_buttons else {"M1": "left", "M2": "right"},
+    )
+    doc = reduce_project(args.project_dir, output_path=args.output, params=params)
+    if args.json:
+        print(json.dumps(doc, indent=2, ensure_ascii=False))
+    else:
+        stats = doc["stats"]
+        print(f"Reduced {stats['n_raw_events']} raw events → {stats['n_actions']} actions "
+              f"({stats['reduction_ratio']}:1)")
+        for name, count in sorted(stats["action_histogram"].items(), key=lambda kv: -kv[1]):
+            print(f"  {name:<12} {count}")
+        print(f"Wrote {doc['output_path']}")
+
+
+def run_view_actions(args: argparse.Namespace) -> None:
+    from ..reduce.viewer import serve
+
+    serve(args.project_dir, port=args.port, open_browser=not args.no_open)
