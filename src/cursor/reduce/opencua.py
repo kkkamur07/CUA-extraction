@@ -53,6 +53,14 @@ class ReduceParams:
     keyframe_backtrack_max_s: float = 5.0
     keyboard_keyframe_lead_s: float = 0.2
     terminate_status: str | None = "success"   # None disables the terminate action
+    # Drag-path preservation (extension over the paper, see docs): when the
+    # actual drag trajectory deviates from the straight start->end line by
+    # more than drag_path_deviation_px, the simplified true path is attached
+    # as an auxiliary "path" field (args stay strictly AgentNet-shaped).
+    include_drag_paths: bool = True
+    drag_path_deviation_px: float = 6.0   # min curvature to bother storing a path
+    drag_path_epsilon_px: float = 3.0     # Douglas-Peucker simplification tolerance
+    drag_path_max_points: int = 64
     # Overlay key -> physical button. Overrides the `button` field via
     # `source_key` because previously extracted artifacts carry an inverted
     # mapping (M1 is the LEFT mouse button on the TooTallToby overlay, and it
@@ -97,6 +105,12 @@ class CursorTrack:
             return (self.xs[j], self.ys[j])
         return None
 
+    def samples_between(self, t0: float, t1: float) -> list[tuple[float, float, float]]:
+        """(t, x, y) samples with t0 <= t <= t1."""
+        i = bisect.bisect_left(self.ts, t0)
+        j = bisect.bisect_right(self.ts, t1)
+        return [(self.ts[k], self.xs[k], self.ys[k]) for k in range(i, j)]
+
     def pre_movement_start(self, t: float, params: ReduceParams) -> float:
         """Backtrack from t to the start of the contiguous movement phase that
         leads into it (AgentNet state–action matching for mouse actions)."""
@@ -112,6 +126,35 @@ class CursorTrack:
                 break
             i -= 1
         return max(0.0, self.ts[max(i, 0)])
+
+
+# -------------------------------------------------------- path simplification
+def _perp_dist(p: tuple[float, float], a: tuple[float, float],
+               b: tuple[float, float]) -> float:
+    """Distance from point p to the segment a-b."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    l2 = dx * dx + dy * dy
+    if l2 == 0:
+        return math.hypot(p[0] - a[0], p[1] - a[1])
+    f = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2))
+    return math.hypot(p[0] - (a[0] + f * dx), p[1] - (a[1] + f * dy))
+
+
+def _rdp(points: list[tuple[float, float, float]], eps: float):
+    """Ramer–Douglas–Peucker over (t, x, y) points (keyed on x, y)."""
+    if len(points) < 3:
+        return list(points)
+    a, b = points[0], points[-1]
+    dmax, idx = 0.0, 0
+    for i in range(1, len(points) - 1):
+        d = _perp_dist(points[i][1:], a[1:], b[1:])
+        if d > dmax:
+            dmax, idx = d, i
+    if dmax <= eps:
+        return [a, b]
+    left = _rdp(points[:idx + 1], eps)
+    right = _rdp(points[idx:], eps)
+    return left[:-1] + right
 
 
 # ------------------------------------------------------------- stream elements
@@ -359,13 +402,36 @@ class _Reducer:
                 self.flush_clicks()
         self._clicks.append(ev)
 
+    def _drag_path(self, ev: _MouseEvent) -> list[dict[str, float]] | None:
+        """Simplified true trajectory of a drag, when it is not just a line.
+
+        Extension over the AgentNet format for drawing-heavy domains (CAD
+        sketching, freehand annotation): a curved drag — a circle, an orbit
+        gesture, a marker stroke — is not reproducible from its endpoints.
+        The path is auxiliary; args/pyautogui_code stay strictly linear."""
+        p = self.params
+        if not p.include_drag_paths or ev.press_pos is None or ev.release_pos is None:
+            return None
+        pts = self.track.samples_between(ev.t, ev.end_t)
+        if len(pts) < 3:
+            return None
+        a, b = ev.press_pos, ev.release_pos
+        max_dev = max(_perp_dist(pt[1:], a, b) for pt in pts[1:-1])
+        if max_dev < p.drag_path_deviation_px:
+            return None                      # essentially straight — endpoints suffice
+        simp = _rdp(pts, p.drag_path_epsilon_px)
+        if len(simp) > p.drag_path_max_points:
+            step = (len(simp) - 1) / (p.drag_path_max_points - 1)
+            simp = [simp[round(i * step)] for i in range(p.drag_path_max_points)]
+        return [{"t": round(t, 3), **self._norm((x, y))} for t, x, y in simp]
+
     def _emit_drag(self, ev: _MouseEvent) -> None:
         p0, p1 = ev.press_pos, ev.release_pos
         n0, n1 = self._norm(p0), self._norm(p1)
         code = (f"pyautogui.moveTo(x={n0['x']}, y={n0['y']}); "
                 f"pyautogui.dragTo(x={n1['x']}, y={n1['y']}, button={ev.button!r})")
         code = self._wrap_modifiers(code, ev.modifiers)
-        self._emit({
+        action = {
             "t_start": round(ev.t, 3),
             "t_end": round(ev.end_t, 3),
             "action": "dragTo",
@@ -375,7 +441,11 @@ class _Reducer:
             "pyautogui_code": code,
             "observation": self._observation(ev.t, mouse=True),
             "evidence": {"mouse_button_indices": [ev.source_index]},
-        })
+        }
+        path = self._drag_path(ev)
+        if path:
+            action["path"] = path
+        self._emit(action)
 
 
 # ------------------------------------------------------------------ reduction

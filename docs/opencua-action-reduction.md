@@ -20,13 +20,28 @@ artifacts and never reads the video.
 | State–action matching: "for mouse clicks, we backtrack to the beginning of the mouse's pre-movement phase" (§2.2 (2)) | Each action carries `observation.keyframe_t/keyframe_frame`: for mouse actions, walk the cursor track backwards from the press until motion falls below `stationary_eps_px` (max 5 s); for keyboard actions, 0.2 s before the first press. Without frame-diffing the video this approximates "last visually distinct frame". |
 | Normalized coordinates (AgentNetBench examples use `x=0.988, y=0.081`) | `args.x/y` are normalized to the screen crop, 4 decimals, clamped to [0, 1]; raw crop pixels are kept in `pixels`. |
 
-### Extension beyond the paper
+### Extensions beyond the paper
 
-Modifier-held mouse actions (CTRL+drag, SHIFT+click — constant in CAD) have no
-representation in Table 1. They are kept as `click`/`dragTo` with a
-`modifiers` list, and the `pyautogui_code` wraps the call in
-`keyDown(...)`/`keyUp(...)`. Consumers wanting strict Table-1 actions can drop
-the wrapper.
+1. **Modifier-held mouse actions** (CTRL+drag, SHIFT+click — constant in CAD)
+   have no representation in Table 1. They are kept as `click`/`dragTo` with a
+   `modifiers` list, and the `pyautogui_code` wraps the call in
+   `keyDown(...)`/`keyUp(...)`. Consumers wanting strict Table-1 actions can
+   drop the wrapper.
+2. **Drag paths.** AgentNet reduces every drag to its endpoints — fine for
+   office/web selections, lossy for drawing-heavy domains: a sketch stroke,
+   a drawn circle, or an orbit gesture is not reproducible from a straight
+   line. When a drag's true trajectory deviates from the start→end line by
+   more than `drag_path_deviation_px` (6 px), the Douglas-Peucker-simplified
+   path (≤ 64 points, normalized coords + per-point timestamps) is attached as
+   an auxiliary `"path"` field. `args`/`pyautogui_code` stay strictly linear,
+   so AgentNet-strict consumers are unaffected; path-aware training can use
+   the extra field. In the six samples, 28–67 % of drags carry a path —
+   i.e. most CAD drags are *not* straight lines. Disable with
+   `include_drag_paths=False`. In the viewer, solid drag lines are true
+   paths; dashed lines are endpoint-only drags. Mouse motion with **no**
+   button held remains discarded: in CAD the geometry is defined by
+   clicks/drags, and hover motion between them carries no state change we
+   can attribute.
 
 ## Output format
 

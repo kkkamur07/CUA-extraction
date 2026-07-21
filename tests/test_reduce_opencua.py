@@ -190,6 +190,28 @@ def test_numpad_write():
     check("numpad write", acts[0]["args"]["text"] == "1.5", str(acts[0]["args"]))
 
 
+# 15b. curved drag (circle-like) keeps its simplified true path
+def test_drag_path_curved():
+    import math as m
+    pts = [(1.0 + i * 0.1, 400 + 150 * m.cos(m.pi * i / 10), 400 + 150 * m.sin(m.pi * i / 10))
+           for i in range(11)]  # half-circle from (550,400) to (250,400)
+    acts = actions_of(cursor_path(pts), [btn("left", 1.0, 2.0)], [])
+    a = acts[0]
+    check("curved is drag", a["action"] == "dragTo", a["action"])
+    check("curved has path", "path" in a and len(a["path"]) >= 4,
+          str(len(a.get("path", []))))
+    if "path" in a:
+        ys = [p["y"] for p in a["path"]]
+        check("path bulges", max(ys) > a["args"]["from"]["y"] + 0.1, str(ys))
+
+
+# 15c. straight drag stores no path (endpoints suffice)
+def test_drag_path_straight():
+    pts = [(1.0 + i * 0.1, 100 + 30 * i, 100 + 20 * i) for i in range(11)]
+    acts = actions_of(cursor_path(pts), [btn("left", 1.0, 2.0)], [])
+    check("straight no path", "path" not in acts[0], str(acts[0].get("path"))[:60])
+
+
 # 15. capslock capitalizes letters until toggled off
 def test_capslock():
     keys = [key("CAPSLOCK", 0.5, 0.6), key("A", 1.0, 1.1),
