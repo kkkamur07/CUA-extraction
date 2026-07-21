@@ -85,6 +85,27 @@ def test_drag():
           a["pyautogui_code"])
 
 
+# 3b. orbit gesture: big movement during the hold but ends near the start
+#     — must be a drag, not a click (movement-during-hold classification)
+def test_orbit_is_drag():
+    cur = cursor_path([(1.0, 100, 100), (1.3, 300, 250), (1.6, 320, 260),
+                       (1.9, 102, 101), (2.0, 102, 101)])
+    acts = actions_of(cur, [btn("left", 1.0, 2.0)], [])
+    check("orbit count", len(acts) == 1, str([a["action"] for a in acts]))
+    a = acts[0]
+    check("orbit is drag", a["action"] == "dragTo", a["action"])
+    # endpoints are honest: start ≈ end
+    check("orbit endpoints", abs(a["pixels"]["from"]["x"] - a["pixels"]["to"]["x"]) < 6,
+          str(a["pixels"]))
+
+
+# 3c. stationary long hold stays a click even with sparse samples
+def test_long_hold_click():
+    cur = cursor_path([(0.9, 400, 300), (1.5, 401, 301), (2.4, 400, 300)])
+    acts = actions_of(cur, [btn("left", 1.0, 2.3)], [])
+    check("hold is click", acts[0]["action"] == "click", acts[0]["action"])
+
+
 # 4. right button click name
 def test_right_click():
     cur = cursor_path([(0.9, 50, 60)])

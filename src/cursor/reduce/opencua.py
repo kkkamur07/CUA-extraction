@@ -42,7 +42,7 @@ SCHEMA_VERSION = "opencua-reduction/1"
 
 @dataclass(frozen=True)
 class ReduceParams:
-    drag_min_px: float = 12.0            # press→release displacement that makes a drag
+    drag_min_px: float = 12.0            # cursor movement during the hold that makes a drag
     multi_click_gap_s: float = 0.4       # max release→press gap inside double/triple click
     multi_click_radius_px: float = 12.0  # max spatial spread inside double/triple click
     write_max_gap_s: float = 2.0         # max gap between chars merged into one write()
@@ -97,6 +97,22 @@ class CursorTrack:
             return (self.xs[j], self.ys[j])
         return None
 
+    def max_excursion(self, t0: float, t1: float,
+                      ref: tuple[float, float] | None) -> float:
+        """Largest distance from ref reached by any sample in [t0, t1].
+
+        This is what decides click vs drag: the mouse *moved during the
+        hold*. Endpoint displacement alone misclassifies gestures that return
+        near their origin (view orbits, scribbles) as clicks."""
+        i = bisect.bisect_left(self.ts, t0)
+        j = bisect.bisect_right(self.ts, t1)
+        if i >= j:
+            return 0.0
+        if ref is None:
+            ref = (self.xs[i], self.ys[i])
+        return max(math.hypot(self.xs[k] - ref[0], self.ys[k] - ref[1])
+                   for k in range(i, j))
+
     def pre_movement_start(self, t: float, params: ReduceParams) -> float:
         """Backtrack from t to the start of the contiguous movement phase that
         leads into it (AgentNet state–action matching for mouse actions)."""
@@ -132,6 +148,7 @@ class _MouseEvent:
     button: str
     press_pos: tuple[float, float] | None
     release_pos: tuple[float, float] | None
+    moved_px: float          # max cursor excursion while the button was held
     modifiers: list[str]
     source_index: int
 
@@ -331,11 +348,9 @@ class _Reducer:
         self.flush_write()
         self.flush_press()
 
-        drag_dist = 0.0
-        if ev.press_pos is not None and ev.release_pos is not None:
-            drag_dist = math.hypot(ev.release_pos[0] - ev.press_pos[0],
-                                   ev.release_pos[1] - ev.press_pos[1])
-        if drag_dist >= self.params.drag_min_px:
+        # drag iff the cursor moved while the button was held (not merely
+        # endpoint displacement — an orbit gesture can end where it started)
+        if ev.moved_px >= self.params.drag_min_px:
             self.flush_clicks()
             self._emit_drag(ev)
             return
@@ -361,6 +376,13 @@ class _Reducer:
 
     def _emit_drag(self, ev: _MouseEvent) -> None:
         p0, p1 = ev.press_pos, ev.release_pos
+        if p0 is None or p1 is None:
+            # fill endpoints from the first/last cursor sample of the hold
+            i = bisect.bisect_left(self.track.ts, ev.t)
+            j = bisect.bisect_right(self.track.ts, ev.end_t)
+            if i < j:
+                p0 = p0 or (self.track.xs[i], self.track.ys[i])
+                p1 = p1 or (self.track.xs[j - 1], self.track.ys[j - 1])
         n0, n1 = self._norm(p0), self._norm(p1)
         code = (f"pyautogui.moveTo(x={n0['x']}, y={n0['y']}); "
                 f"pyautogui.dragTo(x={n1['x']}, y={n1['y']}, button={ev.button!r})")
@@ -438,10 +460,15 @@ def reduce_events(
         button = ev.get("button", "left")
         if params.button_map and ev.get("source_key") in params.button_map:
             button = params.button_map[ev["source_key"]]
+        press_pos = track.pos_at(press_t, params.cursor_max_gap_s)
+        release_pos = track.pos_at(release_t, params.cursor_max_gap_s)
+        moved = track.max_excursion(press_t, release_t, press_pos)
+        if press_pos is not None and release_pos is not None:
+            moved = max(moved, math.hypot(release_pos[0] - press_pos[0],
+                                          release_pos[1] - press_pos[1]))
         stream.append((press_t, 0, _MouseEvent(
             t=press_t, end_t=release_t, button=button,
-            press_pos=track.pos_at(press_t, params.cursor_max_gap_s),
-            release_pos=track.pos_at(release_t, params.cursor_max_gap_s),
+            press_pos=press_pos, release_pos=release_pos, moved_px=moved,
             modifiers=_active_mods(mods, press_t, params.modifier_tolerance_s),
             source_index=i,
         )))
